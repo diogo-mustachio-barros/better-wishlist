@@ -23,6 +23,6 @@ pub fn parse_series_cards(line: &str) -> Option<(&str, Vec<&str>)> {
             .map(str::trim)
             .collect();
 
-        (series, card_names)
+        (series.trim(), card_names)
       })
 }

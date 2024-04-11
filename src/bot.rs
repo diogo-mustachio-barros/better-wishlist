@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use serenity::all::{MessageBuilder, UserId};
 use serenity::async_trait;
 use serenity::model::channel::Message;
@@ -79,31 +81,16 @@ impl EventHandler for Bot {
                         let user_id = msg.author.id.to_string();
                         let cards_n = card_names.len();
 
-                        let mut errors: Vec<(&str, mongodb::error::Error)> = vec![];
+                        let time = SystemTime::now();
+                        let error = self.wishlist_db.add_all_to_wishlist(&user_id, series, card_names).await;
+                        println!("Elapsed time: {}ms", time.elapsed().unwrap().as_millis());
 
-                        for card_name in card_names {
-                            // println!("'{}'", card_name);
-                            if let Some(err) = self.wishlist_db.add_to_wishlist(
-                                &user_id
-                                , series.trim()
-                                , card_name
-                                ).await 
-                            {
-                                errors.push((card_name, err));
-                            }
-                        }
-
-                        if errors.is_empty() {
+                        if error.is_none() {
                             response.push(format!("Added all {} cards to your wishlist!", cards_n));
                         } else {
-                            let successful = cards_n - errors.len();
-                            response.push(format!("Added {} cards to your wishlist!\n", successful));
-                            response.push(format!("Something went wrong while adding {} cards to your wishlist.", errors.len()));
-
+                            response.push(format!("Something went wrong while adding {} cards to your wishlist.", cards_n));
                             // log errors
-                            for error in errors {
-                                println!("{:?}", error)
-                            }
+                            println!("{}", error.unwrap());
                         };
                     },
                     None => { response.push("Something went wrong parsing the command."); },
@@ -126,10 +113,10 @@ impl EventHandler for Bot {
                             if let Some(err) = self.wishlist_db.remove_from_wishlist(
                                 &user_id
                                 , series.trim()
-                                , card_name
+                                , &card_name
                                 ).await 
                             {
-                                errors.push((card_name, err));
+                                errors.push((&card_name, err));
                             }
                         }
 

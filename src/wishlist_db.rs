@@ -1,13 +1,13 @@
 use std::vec;
 
-use mongodb::{self, bson::{doc, Bson, Document}, options::FindOneAndUpdateOptions};
+use mongodb::{self, bson::{doc, Bson, Document}, error::Error, options::FindOneAndUpdateOptions};
 use serenity::futures::TryStreamExt;
 
 pub struct WishlistDB {
     db_client: mongodb::Client
 }
 
-pub async fn init_db(uri: impl AsRef<str>) -> Result<WishlistDB, mongodb::error::Error> {
+pub async fn init_db(uri: impl AsRef<str>) -> Result<WishlistDB, Error> {
     // Create a new client and connect to the server
     let client = mongodb::Client::with_uri_str(uri).await;
 
@@ -15,30 +15,52 @@ pub async fn init_db(uri: impl AsRef<str>) -> Result<WishlistDB, mongodb::error:
 }
 
 impl WishlistDB {
-    pub async fn add_to_wishlist(&self, user_id:&str, series:&str, card:&str) -> Option<mongodb::error::Error> {
-        let collection = get_wishlist_collection(&self.db_client);
+    // pub async fn add_to_wishlist(&self, user_id:&str, series:&str, card:&str) -> Option<Error> {
+    //     self.add_all_to_wishlist(user_id, series, [card].to_vec()).await
+    // }
 
-        let res: Result<Option<Document>, _> = 
-            if self.user_has_series(user_id, series).await {
-                collection.find_one_and_update( 
-                    doc!{"id": user_id, "series.name": series}, 
-                    doc!{"$addToSet": { "series.$[elem].cards": card }}, 
-                    FindOneAndUpdateOptions::builder()
-                    .upsert(true)
-                    .array_filters(vec![doc! {"elem.name": series }])
-                    .build()
-                ).await
+    // pub async fn add_all_to_wishlist(&self, user_id:&str, series:&str, cards:Vec<&str>) -> Vec<(String, Error)>{
+    //     let futures = FuturesUnordered::new();
+    //     for card in cards {
+    //         futures.push(self.add_to_wishlist(user_id, series, card))
+    //     }
+        
+    //     let mut errors: Vec<(String, mongodb::error::Error)> = vec![];
+    //     let results: Vec<Option<(String, mongodb::error::Error)>> = futures.collect().await;
+    //     for res in results {
+    //         match res {
+    //             Some((card, err)) => errors.push((card, err)),
+    //             None => ()
+    //         }
+    //     }
+
+    //     return errors;
+    // }
+
+    pub async fn add_all_to_wishlist(&self, user_id:&str, series:&str, cards:Vec<&str>) -> Option<Error> {
+        let collection = get_wishlist_collection(&self.db_client);
+        if !self.user_has_series(user_id, series).await {
+            let res = collection.find_one_and_update(
+                doc! {"id": user_id},
+                doc! {"$addToSet": { "series": { "name": series, "cards": [] }}},
+                FindOneAndUpdateOptions::builder()
+                .upsert(true)
+                .build()
+            ).await;
+
+            if res.is_err() {
+                return Some(res.unwrap_err());
             }
-            else
-            {
-                collection.find_one_and_update(
-                    doc! {"id": user_id},
-                    doc! {"$addToSet": { "series": { "name": series, "cards": [card] }}},
-                    FindOneAndUpdateOptions::builder()
-                    .upsert(true)
-                    .build()
-                ).await
-            };
+        };
+
+        let res = collection.find_one_and_update( 
+            doc!{"id": user_id, "series.name": series}, 
+            doc!{"$addToSet": { "series.$[elem].cards": doc!{"$each": cards} }}, 
+            FindOneAndUpdateOptions::builder()
+            .upsert(true)
+            .array_filters(vec![doc! {"elem.name": series }])
+            .build()
+        ).await;
 
         match res {
             Ok(_) => None,

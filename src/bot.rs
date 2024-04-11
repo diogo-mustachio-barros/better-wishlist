@@ -63,7 +63,7 @@ impl EventHandler for Bot {
                 return;
             }
 
-            send_response(&ctx, msg.channel_id, response.build()).await;
+            send_response(&ctx, msg, response.build()).await;
         }
         else if msg.author.id == SOFI_USER_ID
         {
@@ -143,7 +143,7 @@ impl EventHandler for Bot {
 
             let message = response.build();
             if !message.is_empty() {
-                send_response(&ctx, msg.channel_id, message).await;
+                send_response(&ctx, msg, message).await;
             }
         }
     }

@@ -3,7 +3,7 @@ use std::vec;
 use mongodb::{self, bson::{doc, Bson, Document}, error::Error, options::FindOneAndUpdateOptions};
 use serenity::futures::TryStreamExt;
 
-use crate::util::series_to_search;
+use crate::util::to_search_term;
 
 pub struct WishlistDB {
     db_client: mongodb::Client
@@ -39,10 +39,10 @@ impl WishlistDB {
     //     return errors;
     // }
 
-    pub async fn add_all_to_wishlist(&self, user_id:&str, series:&str, cards:Vec<&str>) -> Option<Error> {
+    pub async fn add_all_to_wishlist(&self, user_id:&str, series:&str, card_names:Vec<&str>) -> Option<Error> {
         let collection = get_wishlist_collection(&self.db_client);
         
-        let series_search = series_to_search(series);
+        let series_search = to_search_term(series);
         
         if !self.user_has_series(user_id, series).await {
             let res = collection.find_one_and_update(
@@ -58,12 +58,14 @@ impl WishlistDB {
             }
         };
 
+        let cards : Vec<Document> = card_names.iter().map(|card| doc!{"name": card, "search": to_search_term(card)}).collect();
+
         let res = collection.find_one_and_update( 
-            doc!{"id": user_id, "series.search": series_search}, 
+            doc!{"id": user_id, "series.search": &series_search}, 
             doc!{"$addToSet": { "series.$[elem].cards": doc!{"$each": cards} }}, 
             FindOneAndUpdateOptions::builder()
             .upsert(true)
-            .array_filters(vec![doc! {"elem.name": series }])
+            .array_filters(vec![doc! {"elem.search": series_search }])
             .build()
         ).await;
 
@@ -77,11 +79,12 @@ impl WishlistDB {
         let collection = get_wishlist_collection(&self.db_client);
 
         // println!("'{}'", card_name);
-        let series_search = series_to_search(series);
+        let series_search = to_search_term(series);
+        let card_search = to_search_term(card_name);
 
         let res =
             collection.find(
-                doc!{"series.search": series_search, "series.cards": card_name},
+                doc!{"series.search": series_search, "series.cards.search": card_search},
                 None
             ).await;
 
@@ -113,14 +116,15 @@ impl WishlistDB {
     pub async fn remove_from_wishlist(&self, user_id:&str, series:&str, card:&str) -> Option<mongodb::error::Error> {
         let collection = get_wishlist_collection(&self.db_client);
         
-        let series_search = series_to_search(series);
+        let series_search = to_search_term(series);
+        let card_search = to_search_term(card);
 
         let res: Result<Option<Document>, _> = 
             collection.find_one_and_update( 
-                doc!{"id": user_id, "series.search": series_search}, 
-                doc!{"$pull": { "series.$[elem].cards": card }}, 
+                doc!{"id": user_id, "series.search": &series_search}, 
+                doc!{"$pull": { "series.$[elem].cards.search": card_search }}, 
                 FindOneAndUpdateOptions::builder()
-                .array_filters(vec![doc! {"elem.name": series }])
+                .array_filters(vec![doc! {"elem.name": series_search }])
                 .build()
             ).await;
 

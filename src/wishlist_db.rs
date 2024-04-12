@@ -58,7 +58,9 @@ impl WishlistDB {
             }
         };
 
-        let cards : Vec<Document> = card_names.iter().map(|card| doc!{"name": card, "search": to_search_term(card)}).collect();
+        let cards : Vec<Document> = card_names.iter()
+            .map(|card| doc!{"name": card, "search": to_search_term(card)})
+            .collect();
 
         let res = collection.find_one_and_update( 
             doc!{"id": user_id, "series.search": &series_search}, 
@@ -113,16 +115,18 @@ impl WishlistDB {
         return Ok(ret);
     }
 
-    pub async fn remove_from_wishlist(&self, user_id:&str, series:&str, card:&str) -> Option<mongodb::error::Error> {
+    pub async fn remove_all_from_wishlist(&self, user_id:&str, series:&str, card_names:Vec<&str>) -> Option<mongodb::error::Error> {
         let collection = get_wishlist_collection(&self.db_client);
         
         let series_search = to_search_term(series);
-        let card_search = to_search_term(card);
+        let cards_search : Vec<String> = card_names.iter()
+            .map(|card| to_search_term(card))
+            .collect();
 
         let res: Result<Option<Document>, _> = 
             collection.find_one_and_update( 
                 doc!{"id": user_id, "series.search": &series_search}, 
-                doc!{"$pull": { "series.$[elem].cards.search": card_search }}, 
+                doc!{"$pullAll": { "series.$[elem].cards.search": cards_search }}, 
                 FindOneAndUpdateOptions::builder()
                 .array_filters(vec![doc! {"elem.name": series_search }])
                 .build()

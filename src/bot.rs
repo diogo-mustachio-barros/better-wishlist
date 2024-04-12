@@ -50,29 +50,16 @@ impl Bot {
                 let user_id = msg.author.id.to_string();
                 let cards_n = card_names.len();
     
-                let mut errors: Vec<(&str, mongodb::error::Error)> = vec![];
+                let err = 
+                    self.wishlist_db.remove_all_from_wishlist(&user_id, series.trim(), card_names).await; 
     
-                for card_name in card_names {
-                    // println!("'{}'", card_name);
-                    if let Some(err) = self.wishlist_db.remove_from_wishlist(
-                        &user_id
-                        , series.trim()
-                        , &card_name
-                        ).await 
-                    {
-                        errors.push((&card_name, err));
-                    }
-                }
-    
-                if errors.is_empty() {
+                if err.is_none() {
                     message.push(format!("Removed all {} cards from your wishlist!", cards_n));
                 } else {
-                    message.push(format!("Something went wrong while removing {} cards from your wishlist.", errors.len()));
+                    message.push(format!("Something went wrong while removing {} cards from your wishlist.", cards_n));
     
                     // log errors
-                    for error in errors {
-                        println!("{:?}", error)
-                    }
+                    println!("{:?}", err.unwrap());
                 };
             },
             None => { message.push("Something went wrong parsing your command."); },

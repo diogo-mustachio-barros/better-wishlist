@@ -26,3 +26,7 @@ pub fn parse_series_cards(line: &str) -> Option<(&str, Vec<&str>)> {
         (series.trim(), card_names)
       })
 }
+
+pub fn series_to_search(series: &str) -> String {
+    series.to_lowercase()[0..16].to_string()
+}

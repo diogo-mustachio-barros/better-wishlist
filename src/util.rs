@@ -27,6 +27,8 @@ pub fn parse_series_cards(line: &str) -> Option<(&str, Vec<&str>)> {
       })
 }
 
-pub fn to_search_term(series: &str) -> String {
-    series.to_lowercase()[0..16].to_string()
+pub fn to_search_term(name: &str) -> String {
+    let mut search = name.to_lowercase();
+    search.truncate(16);
+    search
 }

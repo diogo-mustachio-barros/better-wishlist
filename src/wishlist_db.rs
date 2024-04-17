@@ -1,6 +1,6 @@
 use std::vec;
 
-use mongodb::{self, bson::{doc, Bson, Document}, error::Error, options::FindOneAndUpdateOptions};
+use mongodb::{self, bson::{doc, Bson, Document}, error::Error, options::{ClientOptions, FindOneAndUpdateOptions}, Client};
 use serenity::futures::TryStreamExt;
 
 use crate::util::to_search_term;
@@ -11,7 +11,11 @@ pub struct WishlistDB {
 
 pub async fn init_db(uri: impl AsRef<str>) -> Result<WishlistDB, Error> {
     // Create a new client and connect to the server
-    let client = mongodb::Client::with_uri_str(uri).await;
+    let mut client_options = ClientOptions::parse_async(uri).await?;
+    client_options.max_connecting = Some(3);
+
+    // let client = mongodb::Client::with_uri_str(uri).await;
+    let client = Client::with_options(client_options);
 
     return client.map(|db_client| WishlistDB{db_client});
 }
@@ -149,6 +153,34 @@ impl WishlistDB {
             Err(_) => false,
         }
     }
+
+    pub async fn get_user_wishlist(&self, user_id:&str) -> Vec<(String, Vec<String>)> {
+        let collection = get_wishlist_collection(&self.db_client);
+        
+        let Ok(user_opt) =
+            collection.find_one(
+                doc!{"id": user_id},
+                None
+            ).await 
+            else { todo!() };
+
+        if user_opt.is_none() {
+            vec![]
+        } else {
+            let series_doc_opt = user_opt.unwrap();
+            let Ok(series) = series_doc_opt
+                .get_array("series")
+                else { todo!() };
+
+            series.iter()
+                .map(Bson::as_document)
+                .map(Option::unwrap)
+                .map(flatten_series_document)
+                .filter(Option::is_some)
+                .map(Option::unwrap)
+                .collect()
+        }
+    }
 }
 
 
@@ -160,4 +192,29 @@ fn get_wishlist_collection(client: &mongodb::Client) -> mongodb::Collection<Docu
     let collection: mongodb::Collection<Document> = database.collection(WISHLIST_COLLECTION_NAME);
 
     return collection;
+}
+
+fn flatten_series_document(series_doc:&Document) -> Option<(String, Vec<String>)> {
+    let Ok(series_name) = series_doc.get_str("name")
+        else { return None };
+
+    let Ok(cards_bson) = series_doc.get_array("cards")
+        else { return None };
+    
+    let cards:Vec<String> = cards_bson.iter()
+        .map(Bson::as_document)
+        .map(Option::unwrap)
+        .map(flatten_card_document)
+        .filter(Option::is_some)
+        .map(Option::unwrap)
+        .collect();
+
+    Some((series_name.to_string(), cards))
+}
+
+fn flatten_card_document(card_doc:&Document) -> Option<String> {
+    match card_doc.get_str("name") {
+        Ok(card_name) => Some(card_name.to_owned()),
+        Err(_) => None,
+    }
 }

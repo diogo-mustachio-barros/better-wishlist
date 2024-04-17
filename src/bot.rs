@@ -1,6 +1,7 @@
+use std::cmp::min;
 use std::time::SystemTime;
 
-use serenity::all::{CreateEmbed, CreateMessage, MessageBuilder, UserId};
+use serenity::all::{CreateButton, CreateEmbed, CreateMessage, Interaction, MessageBuilder, UserId};
 use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::prelude::*;
@@ -38,6 +39,23 @@ impl EventHandler for Bot {
             // Ping - Pong
             else if msg.content.eq(".ping") { msg.reply_ping(ctx.http, "Pong!").await.unwrap(); }
         }
+    }
+
+
+    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+        // ########## CHATGPT
+        if let Interaction::Component(component) = interaction {
+            // Check if the interaction is a button click
+            match component.data.custom_id.as_str() {
+                "prev" | "next" => {
+                    // Respond to the button interaction with a message
+                    component.defer(&ctx.http).await.unwrap();
+                    component.channel_id.send_message(ctx.http, CreateMessage::new().content("Hello")).await.unwrap();
+                }
+                _ => {} // Handle other button interactions if needed
+            }
+        }
+        // ########## CHATGPT
     }
 }
 
@@ -149,41 +167,38 @@ impl Bot {
 
     async fn wishlist_list(&self, ctx: Context, msg: Message) {
         let response = CreateMessage::new();
-                
-                let series = [
-                    ( 1, "Series 1"),
-                    ( 2, "Series 2"),
-                    ( 3, "Series 3"),
-                    ( 4, "Series 4"),
-                    ( 5, "Series 5"),
-                    ( 6, "Series 6"),
-                    ( 7, "Series 7"),
-                    ( 8, "Series 8"),
-                    ( 9, "Series 9"),
-                    (10, "Series 10"),
-                ];
 
-                let flat_series = series.map(|(order, name)| format!("{order} • {name}")).join("\n");
-                
-                
-                let embed = CreateEmbed::new()
-                    .title("Wishlist")
-                    .description(flat_series);
+        let user_id = msg.author.id.to_string();        
+        let wishlisted_series = self.wishlist_db.get_user_wishlist(&user_id).await;
 
-                let response = response.add_embed(embed);
+        let flat_series = wishlisted_series[1..min(wishlisted_series.len(), 10)].iter()
+            .enumerate()
+            .map(|(i, (series_name, _))| format!("`{i}` • {series_name}"))
+            .collect::<Vec<String>>()
+            .join("\n");
+        
+        
+        let embed = CreateEmbed::new()
+            .title("Wishlist")
+            .description(flat_series)
+            .color(0x237feb);
 
-                // msg.reply_ping(ctx.http, |m| { });
-                // msg.channel_id.send_message(ctx.http, |m : MessageBuilder| {
-                //     m.embed(|e| {
-                //         e.title("This is a title")
-                //             .description("This is a description")
-                //             .field("Field 1", "Value 1", true)
-                //             .field("Field 2", "Value 2", true)
-                //             .footer(|f| f.text("This is a footer"))
-                //     })
-                // });
+        let response = response.add_embed(embed)
+            .button(CreateButton::new("prev").label("<-"))
+            .button(CreateButton::new("next").label("->"));
 
-                send_response(ctx, msg, response).await;
+        // msg.reply_ping(ctx.http, |m| { });
+        // msg.channel_id.send_message(ctx.http, |m : MessageBuilder| {
+        //     m.embed(|e| {
+        //         e.title("This is a title")
+        //             .description("This is a description")
+        //             .field("Field 1", "Value 1", true)
+        //             .field("Field 2", "Value 2", true)
+        //             .footer(|f| f.text("This is a footer"))
+        //     })
+        // });
+
+        send_response(ctx, msg, response).await;
     }
 }
 

@@ -3,8 +3,6 @@ use std::vec;
 use mongodb::{self, bson::{doc, Bson, Document}, error::Error, options::{ClientOptions, FindOneAndUpdateOptions}, Client};
 use serenity::futures::TryStreamExt;
 
-use crate::util::to_search_term;
-
 pub struct WishlistDB {
     db_client: mongodb::Client
 }
@@ -21,28 +19,6 @@ pub async fn init_db(uri: impl AsRef<str>) -> Result<WishlistDB, Error> {
 }
 
 impl WishlistDB {
-    // pub async fn add_to_wishlist(&self, user_id:&str, series:&str, card:&str) -> Option<Error> {
-    //     self.add_all_to_wishlist(user_id, series, [card].to_vec()).await
-    // }
-
-    // pub async fn add_all_to_wishlist(&self, user_id:&str, series:&str, cards:Vec<&str>) -> Vec<(String, Error)>{
-    //     let futures = FuturesUnordered::new();
-    //     for card in cards {
-    //         futures.push(self.add_to_wishlist(user_id, series, card))
-    //     }
-        
-    //     let mut errors: Vec<(String, mongodb::error::Error)> = vec![];
-    //     let results: Vec<Option<(String, mongodb::error::Error)>> = futures.collect().await;
-    //     for res in results {
-    //         match res {
-    //             Some((card, err)) => errors.push((card, err)),
-    //             None => ()
-    //         }
-    //     }
-
-    //     return errors;
-    // }
-
     pub async fn add_all_to_wishlist(&self, user_id:&str, series:&str, card_names:Vec<&str>) -> Option<Error> {
         let collection = get_wishlist_collection(&self.db_client);
         
@@ -217,4 +193,10 @@ fn flatten_card_document(card_doc:&Document) -> Option<String> {
         Ok(card_name) => Some(card_name.to_owned()),
         Err(_) => None,
     }
+}
+
+pub fn to_search_term(name: &str) -> String {
+    let mut search = name.to_lowercase();
+    search.truncate(16);
+    search
 }

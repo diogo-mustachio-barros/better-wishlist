@@ -1,4 +1,32 @@
+use std::env;
+
 use regex::Regex;
+
+
+
+const DISCORD_TOKEN_KEY:&str = "DISCORD_TOKEN";
+const MONGODB_URL_KEY  :&str = "MONGODB_URL";
+
+
+
+pub fn parse_secrets() -> Option<(String, String)> {
+    // Main args have priority
+    let mut args: Vec<String> = env::args().collect();
+    if args.len() >= 3 {
+        let mongodb_url = args.remove(2);
+        let discord_token = args.remove(1);
+        return Some((discord_token, mongodb_url))
+    }
+
+    // If no main args, try searching environment variables
+    match (env::var(DISCORD_TOKEN_KEY), env::var(MONGODB_URL_KEY)) {
+        (Ok(discord_token), Ok(mongodb_url)) => return Some((discord_token, mongodb_url)),
+        _ => ()
+    }
+
+    // If everything fails, return none
+    None
+}
 
 pub fn parse_card_from_drop(line: &str) -> Option<(&str, &str)> {
     
@@ -25,10 +53,4 @@ pub fn parse_series_cards(line: &str) -> Option<(&str, Vec<&str>)> {
 
         (series.trim(), card_names)
       })
-}
-
-pub fn to_search_term(name: &str) -> String {
-    let mut search = name.to_lowercase();
-    search.truncate(16);
-    search
 }

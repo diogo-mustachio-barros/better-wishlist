@@ -1,21 +1,12 @@
-mod util;
 mod wishlist_db;
 mod bot;
 mod bot_util;
+mod parse_util;
 
-use std::env;
 use bot::init_discord_bot;
 use wishlist_db::init_db;
 
-
-/* 
-[1] • ❤️ •    1 • Charloss • One Piece
-[2] • ❤️ •    2 • Megumi Kitaniji • The World Ends with You
-[3] • ❤️ •    2 • Shizuku • Omamori Himari
-*/
-
-const DISCORD_TOKEN_KEY:&str = "DISCORD_TOKEN";
-const MONGODB_URL_KEY  :&str = "MONGODB_URL";
+use crate::parse_util::parse_secrets;
 
 
 #[tokio::main]
@@ -42,24 +33,4 @@ async fn main() {
     if let Err(why) = discord_client.start().await {
         println!("Client error: {why:?}");
     }
-}
-
-
-fn parse_secrets() -> Option<(String, String)> {
-    // Main args have priority
-    let mut args: Vec<String> = env::args().collect();
-    if args.len() >= 3 {
-        let mongodb_url = args.remove(2);
-        let discord_token = args.remove(1);
-        return Some((discord_token, mongodb_url))
-    }
-
-    // If no main args, try searching environment variables
-    match (env::var(DISCORD_TOKEN_KEY), env::var(MONGODB_URL_KEY)) {
-        (Ok(discord_token), Ok(mongodb_url)) => return Some((discord_token, mongodb_url)),
-        _ => ()
-    }
-
-    // If everything fails, return none
-    None
 }

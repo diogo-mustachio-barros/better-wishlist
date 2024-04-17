@@ -1,13 +1,12 @@
 use std::cmp::min;
-use std::time::SystemTime;
 
-use serenity::all::{CreateButton, CreateEmbed, CreateMessage, Interaction, MessageBuilder, UserId};
+use serenity::all::{CreateButton, CreateEmbed, CreateMessage, Interaction, MessageBuilder, Ready, UserId};
 use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::prelude::*;
 
 use crate::bot_util::send_response;
-use crate::util::{parse_card_from_drop, parse_series_cards};
+use crate::parse_util::{parse_card_from_drop, parse_series_cards};
 use crate::wishlist_db::WishlistDB;
 
 struct Bot {
@@ -22,6 +21,11 @@ const _ME_USER_ID :UserId = UserId::new(234822770385485824);
 
 #[async_trait]
 impl EventHandler for Bot {
+
+    async fn ready(&self, _:Context, _:Ready) {
+        println!("Discord bot ready!");
+    }
+
     async fn message(&self, ctx: Context, msg: Message) {
         // Check for wishlisted cards
         if msg.author.id == NORI_USER_ID || msg.author.id == SOFU_USER_ID //|| msg.author.id == _ME_USER_ID
@@ -69,12 +73,12 @@ impl Bot {
                 let cards_n = card_names.len();
     
                 let err = 
-                    self.wishlist_db.remove_all_from_wishlist(&user_id, series.trim(), card_names).await; 
+                    self.wishlist_db.remove_all_from_wishlist(&user_id, series, card_names).await; 
     
                 if err.is_none() {
-                    message.push(format!("Removed all {} cards from your wishlist!", cards_n));
+                    message.push(format!("Removed {cards_n} card(s) from your wishlist!"));
                 } else {
-                    message.push(format!("Something went wrong while removing {} cards from your wishlist.", cards_n));
+                    message.push(format!("Something went wrong removing {cards_n} card(s) from your wishlist."));
     
                     // log errors
                     println!("{:?}", err.unwrap());
@@ -126,14 +130,12 @@ impl Bot {
             }
         }
 
-        if !wishlist_flag {
-            return;
+        if wishlist_flag {
+            send_response( ctx
+                         , msg
+                         , CreateMessage::new().content(message.build())
+            ).await;
         }
-
-        send_response( ctx
-                     , msg
-                     , CreateMessage::new().content(message.build())
-        ).await;
     }
 
     async fn wishlist_add(&self, ctx: Context, msg: Message) {
@@ -144,14 +146,13 @@ impl Bot {
                 let user_id = msg.author.id.to_string();
                 let cards_n = card_names.len();
 
-                let time = SystemTime::now();
-                let error = self.wishlist_db.add_all_to_wishlist(&user_id, series, card_names).await;
-                println!("Elapsed time: {}ms", time.elapsed().unwrap().as_millis());
+                let error = 
+                    self.wishlist_db.add_all_to_wishlist(&user_id, series, card_names).await;
 
                 if error.is_none() {
-                    message.push(format!("Added all {} cards to your wishlist!", cards_n));
+                    message.push(format!("Added {cards_n} card(s) to your wishlist!"));
                 } else {
-                    message.push(format!("Something went wrong while adding {} cards to your wishlist.", cards_n));
+                    message.push(format!("Something went wrong adding {cards_n} card(s) to your wishlist."));
                     // log errors
                     println!("{}", error.unwrap());
                 };
@@ -186,17 +187,6 @@ impl Bot {
         let response = response.add_embed(embed)
             .button(CreateButton::new("prev").label("<-"))
             .button(CreateButton::new("next").label("->"));
-
-        // msg.reply_ping(ctx.http, |m| { });
-        // msg.channel_id.send_message(ctx.http, |m : MessageBuilder| {
-        //     m.embed(|e| {
-        //         e.title("This is a title")
-        //             .description("This is a description")
-        //             .field("Field 1", "Value 1", true)
-        //             .field("Field 2", "Value 2", true)
-        //             .footer(|f| f.text("This is a footer"))
-        //     })
-        // });
 
         send_response(ctx, msg, response).await;
     }

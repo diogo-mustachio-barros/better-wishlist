@@ -1,11 +1,10 @@
 use std::cmp::min;
 
-use serenity::all::{CreateButton, CreateEmbed, CreateMessage, Interaction, MessageBuilder, Ready, UserId};
+use serenity::all::{CreateButton, CreateEmbed, CreateMessage, Interaction, MessageBuilder, MessageReference, Ready, UserId};
 use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::prelude::*;
 
-use crate::bot_util::send_response;
 use crate::parse_util::{parse_card_from_drop, parse_series_cards};
 use crate::wishlist_db::WishlistDB;
 
@@ -44,7 +43,6 @@ impl EventHandler for Bot {
             else if msg.content.eq(".ping") { msg.reply_ping(ctx.http, "Pong!").await.unwrap(); }
         }
     }
-
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         // ########## CHATGPT
@@ -210,4 +208,14 @@ pub async fn init_discord_bot(token:impl AsRef<str>, wishlist_db: WishlistDB) ->
                          .expect("Err creating client");
 
     return client;
+}
+
+async fn send_response(ctx: Context, original_msg:Message, builder: CreateMessage) {
+    // Reply to original message 
+    let builder = builder.reference_message(MessageReference::from(&original_msg));
+
+    // Try to send
+    if let Err(why) = original_msg.channel_id.send_message(ctx.http, builder).await {
+        println!("Error sending message: {why:?}");
+    };
 }

@@ -1,6 +1,5 @@
 mod wishlist_db;
 mod bot;
-mod bot_util;
 mod parse_util;
 
 use bot::init_discord_bot;

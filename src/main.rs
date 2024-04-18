@@ -3,37 +3,43 @@ mod bot;
 mod util;
 mod logger;
 
+use std::sync::Arc;
+
 use bot::init_discord_bot;
 use wishlist_db::init_db;
 
-use crate::{logger::StdoutLogger, util::parse_util::parse_secrets};
+use crate::{logger::{Logger, StdoutLogger}, util::parse_util::parse_secrets};
 
 
 #[tokio::main]
 async fn main() {
-    // Read secrets
-    let opt_secrets = parse_secrets();
-    if opt_secrets.is_none() {
-        println!("Missing credentials.");
-        return;
-    }
-
-    let (discord_token, mongodb_url) = opt_secrets.unwrap();
-
-    let logger = StdoutLogger;
+    let logger = Arc::new(StdoutLogger);
     
-    print!("Connecting to DB...");
-    // Init db connection
-    let db_connection = init_db(mongodb_url).await.expect("Unable to connect to database");
-    println!("done.");
+    // Read secrets
+    let Some((discord_token, mongodb_url)) = parse_secrets()
+    else {
+        logger.log_error("Missing credentials");
+        return;
+    };
 
-    print!("Initializing Discord bot...");
+    
+    logger.log_info("Connecting to database");
+    // Init db connection
+    let Ok(db_connection) = init_db(mongodb_url).await 
+    else {
+        logger.log_error("Unable to connect to database");
+        return;
+    };
+    logger.log_info("Connected to database");
+    
+    logger.log_info("Initializing Discord bot");
     // Init discord bot api 
-    let mut discord_client = init_discord_bot(discord_token, db_connection, logger).await;
-    println!("done."); 
+    let mut discord_client = init_discord_bot(discord_token, db_connection, logger.clone()).await;
+    logger.log_info("Discord bot initialized");
+
 
     // Start listening for events by starting a single shard
     if let Err(why) = discord_client.start().await {
-        println!("Client error: {why:?}");
+        logger.log_error(format!("Client error: {why:?}"));
     }
 }

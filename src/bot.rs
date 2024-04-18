@@ -5,11 +5,15 @@ use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::prelude::*;
 
-use crate::parse_util::{parse_card_from_drop, parse_series_cards};
+use crate::logger::Logger;
+use crate::util::parse_util::{parse_card_from_drop, parse_series_cards};
 use crate::wishlist_db::WishlistDB;
 
-struct Bot {
-    wishlist_db: WishlistDB
+struct Bot<T> 
+    where T: Logger 
+{
+    wishlist_db: WishlistDB,
+    logger: T
 }
 
 const SOFI_USER_ID:UserId = UserId::new(853629533855809596);
@@ -19,10 +23,12 @@ const _ME_USER_ID :UserId = UserId::new(234822770385485824);
 
 
 #[async_trait]
-impl EventHandler for Bot {
+impl <T> EventHandler for Bot<T> 
+    where T: Logger + Send + Sync
+{
 
     async fn ready(&self, _:Context, _:Ready) {
-        println!("Discord bot ready!");
+        self.logger.log_info("Discord bot ready!");
     }
 
     async fn message(&self, ctx: Context, msg: Message) {
@@ -61,7 +67,9 @@ impl EventHandler for Bot {
     }
 }
 
-impl Bot {
+impl <T> Bot<T> 
+    where T: Logger
+{
     async fn wishlist_remove(&self, ctx: Context, msg: Message) {
         let mut message = MessageBuilder::new();
 
@@ -190,7 +198,9 @@ impl Bot {
     }
 }
 
-pub async fn init_discord_bot(token:impl AsRef<str>, wishlist_db: WishlistDB) -> serenity::Client {
+pub async fn init_discord_bot<T>(token:impl AsRef<str>, wishlist_db: WishlistDB, logger: T) -> serenity::Client 
+    where T: Logger + Send + Sync + 'static
+{
     // Set gateway intents, which decides what events the bot will be notified about
     let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::DIRECT_MESSAGES
@@ -198,7 +208,8 @@ pub async fn init_discord_bot(token:impl AsRef<str>, wishlist_db: WishlistDB) ->
 
     // create bot instance
     let bot = Bot {
-        wishlist_db
+        wishlist_db,
+        logger
     };
 
     // Create a new instance of the Client, logging in as a bot.

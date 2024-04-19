@@ -1,12 +1,12 @@
-use std::cmp::min;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use serenity::all::{CreateButton, CreateEmbed, CreateMessage, Interaction, MessageBuilder, MessageReference, Ready, UserId};
+use serenity::all::{CreateMessage, Interaction, MessageBuilder, MessageReference, Ready, UserId};
 use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::prelude::*;
 
+use crate::interaction_manager::InteractionManager;
 use crate::logger::Logger;
 use crate::util::parse_util::{parse_card_from_drop, parse_series_cards};
 use crate::wishlist_db::WishlistDB;
@@ -14,7 +14,8 @@ use crate::wishlist_db::WishlistDB;
 struct Bot<T> 
     where T: Logger 
 {
-    wishlist_db: WishlistDB,
+    wishlist_db: WishlistDB<T>,
+    // interaction_manager: InteractionManager,
     logger: Arc<T>
 }
 
@@ -48,11 +49,11 @@ impl <T> EventHandler for Bot<T>
                 self.logger.log_info(format!("Served `.wa` for user `{}` in {}ms", msg.author.id, t.elapsed().unwrap().as_millis()));
             } 
             // List wishlist
-            else if msg.content.starts_with(".wl") { 
-                let t = SystemTime::now();
-                self.wishlist_list(ctx, &msg).await; 
-                self.logger.log_info(format!("Served `.wl` for user `{}` in {}ms", msg.author.id, t.elapsed().unwrap().as_millis()));
-            }
+            // else if msg.content.starts_with(".wl") { 
+            //     let t = SystemTime::now();
+            //     self.wishlist_list(ctx, &msg).await; 
+            //     self.logger.log_info(format!("Served `.wl` for user `{}` in {}ms", msg.author.id, t.elapsed().unwrap().as_millis()));
+            // }
             // Remove from wishlist
             else if msg.content.starts_with(".wr") { 
                 let t = SystemTime::now();
@@ -65,19 +66,29 @@ impl <T> EventHandler for Bot<T>
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        // ########## CHATGPT
+        
         if let Interaction::Component(component) = interaction {
-            // Check if the interaction is a button click
+            
+            let user_id = component.user.id;
+
+            component.defer(&ctx.http).await.unwrap();
+            let message = MessageBuilder::new().push("I'm watching you ").mention(&user_id.mention()).push(" :eyes:").build();
+            component.channel_id.send_message(ctx.http, CreateMessage::new().content(message)).await.unwrap();
+
+
+
             match component.data.custom_id.as_str() {
-                "prev" | "next" => {
-                    // Respond to the button interaction with a message
-                    component.defer(&ctx.http).await.unwrap();
-                    component.channel_id.send_message(ctx.http, CreateMessage::new().content("Hello")).await.unwrap();
+                "prev" => {
+                    // component.defer(&ctx.http).await.unwrap();
+                    // component.channel_id.send_message(ctx.http, CreateMessage::new().content("Hello")).await.unwrap();
+                    todo!()
                 }
-                _ => {} // Handle other button interactions if needed
+                "next" => {
+                    todo!()
+                },
+                custom_id => self.logger.log_warning(format!("Unknown interaction custom_id received: `{custom_id}`"))
             }
         }
-        // ########## CHATGPT
     }
 }
 
@@ -88,23 +99,21 @@ impl <T> Bot<T>
         let mut message = MessageBuilder::new();
 
         match parse_series_cards(&msg.content[3..]) {
+            None => { message.push("Something went wrong parsing your command."); },
             Some((series, card_names)) => {
                 let user_id = msg.author.id.to_string();
-                let cards_n = card_names.len();
     
-                let err = 
+                let res = 
                     self.wishlist_db.remove_all_from_wishlist(&user_id, series, card_names).await; 
     
-                if err.is_none() {
-                    message.push(format!("Removed {cards_n} card(s) from your wishlist!"));
-                } else {
-                    message.push(format!("Something went wrong removing {cards_n} card(s) from your wishlist."));
-    
-                    // log errors
-                    self.logger.log_error(err.unwrap().to_string())
+                match res {
+                    Ok(amount) => message.push(format!("Removed {amount} card(s) from your wishlist!")),
+                    Err(err) => {
+                        self.logger.log_error(err.to_string());
+                        message.push(format!("Something went wrong removing cards from your wishlist."))
+                    }
                 };
             },
-            None => { message.push("Something went wrong parsing your command."); },
         }
 
         self.send_response( ctx
@@ -163,22 +172,21 @@ impl <T> Bot<T>
         let mut message = MessageBuilder::new();
 
         match parse_series_cards(&msg.content[3..]) {
+            None => { message.push("Something went wrong parsing the command."); },
             Some((series, card_names)) => {
                 let user_id = msg.author.id.to_string();
-                let cards_n = card_names.len();
 
-                let error = 
+                let res = 
                     self.wishlist_db.add_all_to_wishlist(&user_id, series, card_names).await;
 
-                if error.is_none() {
-                    message.push(format!("Added {cards_n} card(s) to your wishlist!"));
-                } else {
-                    message.push(format!("Something went wrong adding {cards_n} card(s) to your wishlist."));
-                    // log errors
-                    println!("{}", error.unwrap());
+                match res {
+                    Ok(added_cards_count) => message.push(format!("Added {added_cards_count} card(s) to your wishlist!")),
+                    Err(err) =>  {
+                        self.logger.log_error(format!(".wa | {}", err.to_string()));
+                        message.push(format!("Something went wrong adding cards to your wishlist."))
+                    }
                 };
             },
-            None => { message.push("Something went wrong parsing the command."); },
         }
 
         self.send_response( ctx
@@ -188,28 +196,30 @@ impl <T> Bot<T>
     }
 
     async fn wishlist_list(&self, ctx: Context, msg: &Message) {
-        let response = CreateMessage::new();
+        // let response = CreateMessage::new();
 
-        let user_id = msg.author.id.to_string();        
-        let wishlisted_series = self.wishlist_db.get_user_wishlist(&user_id).await;
+        // let user_id = msg.author.id.to_string();        
+        // let wishlisted_series = self.wishlist_db.get_user_wishlist(&user_id).await;
 
-        let flat_series = wishlisted_series[1..min(wishlisted_series.len(), 10)].iter()
-            .enumerate()
-            .map(|(i, (series_name, _))| format!("`{i}` • {series_name}"))
-            .collect::<Vec<String>>()
-            .join("\n");
+        // let flat_series = wishlisted_series[1..min(wishlisted_series.len(), 10)].iter()
+        //     .enumerate()
+        //     .map(|(i, (series_name, _))| format!("`{i}` • {series_name}"))
+        //     .collect::<Vec<String>>()
+        //     .join("\n");
         
         
-        let embed = CreateEmbed::new()
-            .title("Wishlist")
-            .description(flat_series)
-            .color(0x237feb);
+        // let embed = CreateEmbed::new()
+        //     .title("Wishlist")
+        //     .description(flat_series)
+        //     .color(0x237feb);
 
-        let response = response.add_embed(embed)
-            .button(CreateButton::new("prev").label("<-"))
-            .button(CreateButton::new("next").label("->"));
+        // let response = response.add_embed(embed)
+        //     .button(CreateButton::new("prev").label("<-"))
+        //     .button(CreateButton::new("next").label("->"));
 
-        self.send_response(ctx, msg, response).await;
+        // self.send_response(ctx, msg, response).await;
+
+        // self.interaction_manager.add_interaction(msg.author.id);
     }
 
     async fn send_response(&self, ctx: Context, original_msg: &Message, builder: CreateMessage) {
@@ -223,7 +233,7 @@ impl <T> Bot<T>
     }
 }
 
-pub async fn init_discord_bot<T>(token:impl AsRef<str>, wishlist_db: WishlistDB, logger: Arc<T>) -> serenity::Client 
+pub async fn init_discord_bot<T>(token:impl AsRef<str>, wishlist_db: WishlistDB<T>, logger: Arc<T>) -> serenity::Client 
     where T: Logger + Send + Sync + 'static
 {
     // Set gateway intents, which decides what events the bot will be notified about
@@ -234,6 +244,7 @@ pub async fn init_discord_bot<T>(token:impl AsRef<str>, wishlist_db: WishlistDB,
     // create bot instance
     let bot = Bot {
         wishlist_db,
+        // interaction_manager: InteractionManager::new(),
         logger
     };
 

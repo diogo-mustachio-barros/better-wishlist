@@ -2,6 +2,7 @@ mod wishlist_db;
 mod bot;
 mod util;
 mod logger;
+mod interaction_manager;
 
 use std::sync::Arc;
 
@@ -25,7 +26,7 @@ async fn main() {
     
     logger.log_info("Connecting to database");
     // Init db connection
-    let Ok(db_connection) = init_db(mongodb_url).await 
+    let Ok(db_connection) = init_db(logger.clone(), mongodb_url).await 
     else {
         logger.log_error("Unable to connect to database");
         return;

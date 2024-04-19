@@ -1,13 +1,20 @@
-use std::vec;
+use std::{sync::Arc, vec};
 
-use mongodb::{self, bson::{doc, Bson, Document}, error::Error, options::{ClientOptions, FindOneAndUpdateOptions}, Client};
+use mongodb::{self, bson::{doc, Bson, Document}, error::Error, options::{ClientOptions, UpdateOptions}, Client};
 use serenity::futures::TryStreamExt;
 
-pub struct WishlistDB {
-    db_client: mongodb::Client
+use crate::logger::Logger;
+
+pub struct WishlistDB<T> 
+    where T: Logger 
+{
+    db_client: mongodb::Client,
+    logger: Arc<T>
 }
 
-pub async fn init_db(uri: impl AsRef<str>) -> Result<WishlistDB, Error> {
+pub async fn init_db<T>(logger: Arc<T>, uri: impl AsRef<str>) -> Result<WishlistDB<T>, Error> 
+    where T: Logger 
+{
     // Create a new client and connect to the server
     let mut client_options = ClientOptions::parse_async(uri).await?;
     client_options.max_connecting = Some(3);
@@ -15,52 +22,15 @@ pub async fn init_db(uri: impl AsRef<str>) -> Result<WishlistDB, Error> {
     // let client = mongodb::Client::with_uri_str(uri).await;
     let client = Client::with_options(client_options);
 
-    return client.map(|db_client| WishlistDB{db_client});
+    return client.map(|db_client| WishlistDB{db_client, logger});
 }
 
-impl WishlistDB {
-    pub async fn add_all_to_wishlist(&self, user_id:&str, series:&str, card_names:Vec<&str>) -> Option<Error> {
-        let collection = get_wishlist_collection(&self.db_client);
-        
-        let series_search = to_search_term(series);
-        
-        if !self.user_has_series(user_id, series).await {
-            let res = collection.find_one_and_update(
-                doc! {"id": user_id},
-                doc! {"$addToSet": { "series": { "name": series, "search": &series_search, "cards": [] }}},
-                FindOneAndUpdateOptions::builder()
-                .upsert(true)
-                .build()
-            ).await;
-
-            if res.is_err() {
-                return Some(res.unwrap_err());
-            }
-        };
-
-        let cards : Vec<Document> = card_names.iter()
-            .map(|card| doc!{"name": card, "search": to_search_term(card)})
-            .collect();
-
-        let res = collection.find_one_and_update( 
-            doc!{"id": user_id, "series.search": &series_search}, 
-            doc!{"$addToSet": { "series.$[elem].cards": doc!{"$each": cards} }}, 
-            FindOneAndUpdateOptions::builder()
-            .upsert(true)
-            .array_filters(vec![doc! {"elem.search": series_search }])
-            .build()
-        ).await;
-
-        match res {
-            Ok(_) => None,
-            Err(err) => Some(err)
-        }
-    }
-
-    pub async fn get_wishlisted_users(&self, series:&str, card_name:&str) -> Result<Vec<String>, mongodb::error::Error> {
+impl <T> WishlistDB<T> 
+    where T: Logger 
+{
+    pub async fn get_wishlisted_users(&self, series:&str, card_name:&str) -> Result<Vec<String>, Error> {
         let collection = get_wishlist_collection(&self.db_client);
 
-        // println!("'{}'", card_name);
         let series_search = to_search_term(series);
         let card_search = to_search_term(card_name);
 
@@ -70,8 +40,9 @@ impl WishlistDB {
                 None
             ).await;
 
-        if res.is_err() {
-            return Err(res.unwrap_err());
+        if let Err(err) = res {
+            self.logger.log_error(err.to_string());
+            return Err(err);
         }
 
         let cursor = res.unwrap();
@@ -80,57 +51,98 @@ impl WishlistDB {
             cursor.try_collect().await
                   .unwrap_or_else(|_| vec![])
                   .iter()
-                  .map(|doc| {
-                    if let Some(bson) = doc.get("id") {
-                        match bson {
-                            Bson::String(user) => user.to_owned(),
-                            _ => "".to_string()
-                        }
-                    } else {
-                        "".to_string()
-                    }
-                  })
+                  .map(|doc| doc.get_str("id").unwrap_or("").to_string())
                   .collect();
 
         return Ok(ret);
     }
 
-    pub async fn remove_all_from_wishlist(&self, user_id:&str, series:&str, card_names:Vec<&str>) -> Option<mongodb::error::Error> {
+    pub async fn add_all_to_wishlist(&self, user_id:&str, series:&str, mut card_names:Vec<&str>) -> Result<i32, Error> {
         let collection = get_wishlist_collection(&self.db_client);
         
+        let series_search = to_search_term(series);
+
+        let initial_amount;
+        if !self.user_has_series(user_id, series).await {
+            let res = collection.update_one(
+                doc! {"id": user_id},
+                doc! {"$addToSet": { "series": { "name": series, "search": &series_search, "cards": [] }}},
+                UpdateOptions::builder().upsert(true).build()
+            ).await;
+            
+            if res.is_err() {
+                return Err(res.unwrap_err());
+            }
+
+            initial_amount = 0;
+        } else {
+            initial_amount = self.get_user_wishlisted_cards_count(user_id, series).await;
+        };
+
+        // avoid processing duplicate cards
+        card_names.sort();
+        card_names.dedup();
+
+        // create card objects to insert
+        let cards : Vec<Document> = card_names.iter()
+            .map(|card| doc!{"name": card, "search": to_search_term(card)})
+            .collect();
+
+        // add all cards in one go
+        let res = collection.update_one( 
+            doc!{"id": user_id, "series.search": &series_search}, 
+            doc!{"$addToSet": { "series.$[elem].cards": doc!{"$each": cards} }}, 
+            UpdateOptions::builder()
+            .upsert(true)
+            .array_filters(vec![doc! {"elem.search": series_search }])
+            .build()
+        ).await;
+
+        match res {
+            Ok(_) => {
+                let curr_amount = self.get_user_wishlisted_cards_count(user_id, series).await;
+                Ok(curr_amount - initial_amount)
+            },
+            Err(err) => {
+                self.logger.log_error(err.to_string());
+                Err(err)
+            }
+        }
+    }
+
+    pub async fn remove_all_from_wishlist(&self, user_id:&str, series:&str, card_names:Vec<&str>) -> Result<i32, Error> {
+        let collection = get_wishlist_collection(&self.db_client);
+        
+        let initial_amount = self.get_user_wishlisted_cards_count(user_id, series).await;
         let series_search = to_search_term(series);
         let cards_search : Vec<String> = card_names.iter()
             .map(|card| to_search_term(card))
             .collect();
 
-        let res: Result<Option<Document>, _> = 
-            collection.find_one_and_update( 
+        let res = 
+            collection.update_one( 
                 doc!{"id": user_id, "series.search": &series_search}, 
-                doc!{"$pullAll": { "series.$[elem].cards.search": cards_search }}, 
-                FindOneAndUpdateOptions::builder()
-                .array_filters(vec![doc! {"elem.name": series_search }])
+                doc!{"$pull": { "series.$[elem].cards": doc!{"search": {"$in": cards_search}} }}, 
+                UpdateOptions::builder()
+                .array_filters(vec![doc! {"elem.search": series_search }])
                 .build()
             ).await;
 
         match res {
-            Ok(_) => None,
-            Err(err) => Some(err)
+            Ok(_) => {
+                let curr_amount = self.get_user_wishlisted_cards_count(user_id, series).await;
+
+                if curr_amount == 0 {
+                    self.remove_series_from_wishlist(user_id, series).await;
+                }
+
+                Ok(initial_amount - curr_amount)
+            },
+            Err(err) => Err(err)
         }
     }
 
-    async fn user_has_series(&self, user_id:&str, series:&str) -> bool {
-        let collection = get_wishlist_collection(&self.db_client);
-
-        match collection.find_one(
-            doc! {"id": user_id, "series.name": series},
-            None
-        ).await {
-            Ok(x) => x.is_some(),
-            Err(_) => false,
-        }
-    }
-
-    pub async fn get_user_wishlist(&self, user_id:&str) -> Vec<(String, Vec<String>)> {
+    pub async fn get_user_wishlist(&self, user_id: &str) -> Vec<(String, Vec<String>)> {
         let collection = get_wishlist_collection(&self.db_client);
         
         let Ok(user_opt) =
@@ -155,6 +167,124 @@ impl WishlistDB {
                 .filter(Option::is_some)
                 .map(Option::unwrap)
                 .collect()
+        }
+    }
+
+    pub async fn get_user_wishlisted_series_count(&self, user_id: &str) -> i32 {
+        let collection = get_wishlist_collection(&self.db_client);
+
+        let Ok(cursor) =
+            collection.aggregate(
+                [
+                    doc!{"$match": { "id": user_id }},
+                    doc!{"$project": { "count": {"$size": "$series.name"}}}
+                ],
+                None
+            ).await 
+            else { todo!() };
+
+        let Ok(count) = cursor.current().get_i32("count")
+        else{
+            // TODO: log error
+            return 0;
+        };
+
+        count
+    }
+
+    pub async fn get_user_wishlisted_series(&self, user_id: &str, start: i32, end: i32) -> Vec<String> {
+        let collection = get_wishlist_collection(&self.db_client);
+
+        let Ok(cursor) =
+            collection.aggregate(
+                [
+                    doc!{"$match": { "id": "234822770385485824" }},
+                    doc!{"$project": { "series": { "$slice": ["$series.name", start, end]}}}
+                ],
+                None
+            ).await 
+            else { todo!() };
+
+        // cursor.advance();
+        // let Ok(x) = cursor.current().get_array("series")
+        // else {
+        //     // TODO log error
+        //     return vec![];
+        // };
+        
+        todo!()
+    }
+
+    pub async fn get_user_wishlisted_cards_count(&self, user_id: &str, series: &str) -> i32 {
+        let collection = get_wishlist_collection(&self.db_client);
+
+        let series_search = to_search_term(series);
+
+        let res =
+            collection.aggregate(
+                [
+                    doc!{ "$match": { "id": user_id, "series.search": &series_search }},
+                    doc!{ "$project": { "series":
+                    { "$filter": 
+                        { "input":"$series",
+                          "as": "serie",
+                          "cond": 
+                            { "$eq": ["$$serie.search", series_search] }
+                        }
+                    }}},
+                    doc! { "$project": {
+                        "count": { "$size": { "$arrayElemAt": ["$series.cards", 0] } }
+                      }}
+                ],
+                None
+            ).await;
+
+        
+        if let Err(err) = res { 
+            self.logger.log_error(format!("get_user_wishlisted_cards_count: {}", err.to_string()));
+            return 0; 
+        };
+
+        let mut cursor = res.unwrap(); 
+        if cursor.advance().await.unwrap() {
+            match cursor.current().get_i32("count") {
+                Ok(count) => count,
+                Err(err) => {
+                    self.logger.log_error(format!("get_user_wishlisted_cards_count: {}", err.to_string()));
+                    0
+                }
+            }
+        } else {
+            0
+        }
+    }
+
+    async fn user_has_series(&self, user_id: &str, series: &str) -> bool {
+        let collection = get_wishlist_collection(&self.db_client);
+
+        match collection.find_one(
+            doc! {"id": user_id, "series.name": series},
+            None
+        ).await {
+            Ok(x) => x.is_some(),
+            Err(_) => false,
+        }
+    }
+
+    async fn remove_series_from_wishlist(&self, user_id:&str, series:&str) {
+        let collection = get_wishlist_collection(&self.db_client);
+
+        let series_search = to_search_term(series);
+
+        let res = 
+            collection.update_one( 
+                doc!{"id": user_id, "series.search": &series_search}, 
+                doc!{"$pull": { "series": {"search": series_search}}}, 
+                None
+            ).await;
+
+        if let Err(err) = res {
+            self.logger.log_error(format!("remove_series_from_wishlist: {}", err.to_string()))
         }
     }
 }

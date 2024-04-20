@@ -1,6 +1,6 @@
 use std::{sync::Arc, vec};
 
-use mongodb::{self, bson::{doc, Bson, Document}, error::Error, options::{ClientOptions, UpdateOptions}, Client};
+use mongodb::{self, bson::{doc, Bson, Document}, error::Error, options::{ClientOptions, FindOptions, UpdateOptions}, Client};
 use serenity::futures::TryStreamExt;
 
 use crate::logger::Logger;
@@ -36,7 +36,8 @@ impl <T> WishlistDB<T>
 
         let res =
             collection.find(
-                doc!{"series.search": series_search, "series.cards.search": card_search},
+                doc!{ "series": { "$elemMatch": {"search": series_search, "cards.search": card_search}}},
+                // Some(FindOptions::builder().projection(doc! {"id": 1}).build() )
                 None
             ).await;
 

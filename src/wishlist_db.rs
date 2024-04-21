@@ -1,6 +1,6 @@
 use std::{sync::Arc, vec};
 
-use mongodb::{self, bson::{doc, Bson, Document}, error::Error, options::{ClientOptions, FindOptions, UpdateOptions}, Client};
+use mongodb::{self, bson::{doc, Document}, error::Error, options::{ClientOptions, UpdateOptions}, Client};
 use serenity::futures::TryStreamExt;
 
 use crate::logger::Logger;
@@ -31,8 +31,8 @@ impl <T> WishlistDB<T>
     pub async fn get_wishlisted_users(&self, series:&str, card_name:&str) -> Result<Vec<String>, Error> {
         let collection = get_wishlist_collection(&self.db_client);
 
-        let series_search = to_search_term(series);
-        let card_search = to_search_term(card_name);
+        let series_search = series_to_search_term(series);
+        let card_search = card_to_search_term(card_name);
 
         let res =
             collection.find(
@@ -61,7 +61,7 @@ impl <T> WishlistDB<T>
     pub async fn add_all_to_wishlist(&self, user_id:&str, series:&str, mut card_names:Vec<&str>) -> Result<i32, Error> {
         let collection = get_wishlist_collection(&self.db_client);
         
-        let series_search = to_search_term(series);
+        let series_search = series_to_search_term(series);
 
         let initial_amount;
         if !self.user_has_series(user_id, series).await {
@@ -86,7 +86,7 @@ impl <T> WishlistDB<T>
 
         // create card objects to insert
         let cards : Vec<Document> = card_names.iter()
-            .map(|card| doc!{"name": card, "search": to_search_term(card)})
+            .map(|card| doc!{"name": card, "search": series_to_search_term(card)})
             .collect();
 
         // add all cards in one go
@@ -115,9 +115,9 @@ impl <T> WishlistDB<T>
         let collection = get_wishlist_collection(&self.db_client);
         
         let initial_amount = self.get_user_wishlisted_cards_count(user_id, series).await;
-        let series_search = to_search_term(series);
+        let series_search = series_to_search_term(series);
         let cards_search : Vec<String> = card_names.iter()
-            .map(|card| to_search_term(card))
+            .map(|card| card_to_search_term(card))
             .collect();
 
         let res = 
@@ -143,83 +143,83 @@ impl <T> WishlistDB<T>
         }
     }
 
-    pub async fn get_user_wishlist(&self, user_id: &str) -> Vec<(String, Vec<String>)> {
-        let collection = get_wishlist_collection(&self.db_client);
+    // pub async fn get_user_wishlist(&self, user_id: &str) -> Vec<(String, Vec<String>)> {
+    //     let collection = get_wishlist_collection(&self.db_client);
         
-        let Ok(user_opt) =
-            collection.find_one(
-                doc!{"id": user_id},
-                None
-            ).await 
-            else { todo!() };
+    //     let Ok(user_opt) =
+    //         collection.find_one(
+    //             doc!{"id": user_id},
+    //             None
+    //         ).await 
+    //         else { todo!() };
 
-        if user_opt.is_none() {
-            vec![]
-        } else {
-            let series_doc_opt = user_opt.unwrap();
-            let Ok(series) = series_doc_opt
-                .get_array("series")
-                else { todo!() };
+    //     if user_opt.is_none() {
+    //         vec![]
+    //     } else {
+    //         let series_doc_opt = user_opt.unwrap();
+    //         let Ok(series) = series_doc_opt
+    //             .get_array("series")
+    //             else { todo!() };
 
-            series.iter()
-                .map(Bson::as_document)
-                .map(Option::unwrap)
-                .map(flatten_series_document)
-                .filter(Option::is_some)
-                .map(Option::unwrap)
-                .collect()
-        }
-    }
+    //         series.iter()
+    //             .map(Bson::as_document)
+    //             .map(Option::unwrap)
+    //             .map(flatten_series_document)
+    //             .filter(Option::is_some)
+    //             .map(Option::unwrap)
+    //             .collect()
+    //     }
+    // }
 
-    pub async fn get_user_wishlisted_series_count(&self, user_id: &str) -> i32 {
-        let collection = get_wishlist_collection(&self.db_client);
+    // pub async fn get_user_wishlisted_series_count(&self, user_id: &str) -> i32 {
+    //     let collection = get_wishlist_collection(&self.db_client);
 
-        let Ok(cursor) =
-            collection.aggregate(
-                [
-                    doc!{"$match": { "id": user_id }},
-                    doc!{"$project": { "count": {"$size": "$series.name"}}}
-                ],
-                None
-            ).await 
-            else { todo!() };
+    //     let Ok(cursor) =
+    //         collection.aggregate(
+    //             [
+    //                 doc!{"$match": { "id": user_id }},
+    //                 doc!{"$project": { "count": {"$size": "$series.name"}}}
+    //             ],
+    //             None
+    //         ).await 
+    //         else { todo!() };
 
-        let Ok(count) = cursor.current().get_i32("count")
-        else{
-            // TODO: log error
-            return 0;
-        };
+    //     let Ok(count) = cursor.current().get_i32("count")
+    //     else{
+    //         // TODO: log error
+    //         return 0;
+    //     };
 
-        count
-    }
+    //     count
+    // }
 
-    pub async fn get_user_wishlisted_series(&self, user_id: &str, start: i32, end: i32) -> Vec<String> {
-        let collection = get_wishlist_collection(&self.db_client);
+    // pub async fn get_user_wishlisted_series(&self, user_id: &str, start: i32, end: i32) -> Vec<String> {
+    //     let collection = get_wishlist_collection(&self.db_client);
 
-        let Ok(cursor) =
-            collection.aggregate(
-                [
-                    doc!{"$match": { "id": "234822770385485824" }},
-                    doc!{"$project": { "series": { "$slice": ["$series.name", start, end]}}}
-                ],
-                None
-            ).await 
-            else { todo!() };
+    //     let Ok(cursor) =
+    //         collection.aggregate(
+    //             [
+    //                 doc!{"$match": { "id": "234822770385485824" }},
+    //                 doc!{"$project": { "series": { "$slice": ["$series.name", start, end]}}}
+    //             ],
+    //             None
+    //         ).await 
+    //         else { todo!() };
 
-        // cursor.advance();
-        // let Ok(x) = cursor.current().get_array("series")
-        // else {
-        //     // TODO log error
-        //     return vec![];
-        // };
+    //     // cursor.advance();
+    //     // let Ok(x) = cursor.current().get_array("series")
+    //     // else {
+    //     //     // TODO log error
+    //     //     return vec![];
+    //     // };
         
-        todo!()
-    }
+    //     todo!()
+    // }
 
     pub async fn get_user_wishlisted_cards_count(&self, user_id: &str, series: &str) -> i32 {
         let collection = get_wishlist_collection(&self.db_client);
 
-        let series_search = to_search_term(series);
+        let series_search = series_to_search_term(series);
 
         let res =
             collection.aggregate(
@@ -264,7 +264,7 @@ impl <T> WishlistDB<T>
         let collection = get_wishlist_collection(&self.db_client);
 
         match collection.find_one(
-            doc! {"id": user_id, "series.name": series},
+            doc! {"id": user_id, "series.search": series},
             None
         ).await {
             Ok(x) => x.is_some(),
@@ -275,7 +275,7 @@ impl <T> WishlistDB<T>
     async fn remove_series_from_wishlist(&self, user_id:&str, series:&str) {
         let collection = get_wishlist_collection(&self.db_client);
 
-        let series_search = to_search_term(series);
+        let series_search = series_to_search_term(series);
 
         let res = 
             collection.update_one( 
@@ -301,32 +301,13 @@ fn get_wishlist_collection(client: &mongodb::Client) -> mongodb::Collection<Docu
     return collection;
 }
 
-fn flatten_series_document(series_doc:&Document) -> Option<(String, Vec<String>)> {
-    let Ok(series_name) = series_doc.get_str("name")
-        else { return None };
-
-    let Ok(cards_bson) = series_doc.get_array("cards")
-        else { return None };
-    
-    let cards:Vec<String> = cards_bson.iter()
-        .map(Bson::as_document)
-        .map(Option::unwrap)
-        .map(flatten_card_document)
-        .filter(Option::is_some)
-        .map(Option::unwrap)
-        .collect();
-
-    Some((series_name.to_string(), cards))
+pub fn series_to_search_term(name: &str) -> String {
+    let mut search = name.to_lowercase();
+    search.truncate(32);
+    search
 }
 
-fn flatten_card_document(card_doc:&Document) -> Option<String> {
-    match card_doc.get_str("name") {
-        Ok(card_name) => Some(card_name.to_owned()),
-        Err(_) => None,
-    }
-}
-
-pub fn to_search_term(name: &str) -> String {
+pub fn card_to_search_term(name: &str) -> String {
     let mut search = name.to_lowercase();
     search.truncate(16);
     search

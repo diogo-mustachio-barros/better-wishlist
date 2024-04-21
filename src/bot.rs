@@ -1,12 +1,11 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use serenity::all::{CreateMessage, Interaction, MessageBuilder, MessageReference, Ready, UserId};
+use serenity::all::{CreateMessage, Http, Interaction, MessageBuilder, MessageReference, Ready, UserId};
 use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::prelude::*;
 
-use crate::interaction_manager::InteractionManager;
 use crate::logger::Logger;
 use crate::util::parse_util::{parse_card_from_drop, parse_series_cards};
 use crate::wishlist_db::WishlistDB;
@@ -37,7 +36,7 @@ impl <T> EventHandler for Bot<T>
     async fn message(&self, ctx: Context, msg: Message) {
         // Check for wishlisted cards
         if msg.author.id == NORI_USER_ID || msg.author.id == SOFU_USER_ID //|| msg.author.id == _ME_USER_ID
-        { self.wishlist_check(ctx, &msg).await; }
+        { self.wishlist_check(ctx.http(), &msg).await; }
         // SOFI integration
         else if msg.author.id == SOFI_USER_ID { /* println!("{:?}", msg.embeds); */ }
         // Messages from other users will be parsed for commands
@@ -45,7 +44,7 @@ impl <T> EventHandler for Bot<T>
             // Add to wishlist
             if msg.content.starts_with(".wa") { 
                 let t = SystemTime::now();
-                self.wishlist_add(ctx, &msg).await; 
+                self.wishlist_add(ctx.http(), &msg).await; 
                 self.logger.log_info(format!("Served `.wa` for user `{}` in {}ms", msg.author.id, t.elapsed().unwrap().as_millis()));
             } 
             // List wishlist
@@ -57,11 +56,11 @@ impl <T> EventHandler for Bot<T>
             // Remove from wishlist
             else if msg.content.starts_with(".wr") { 
                 let t = SystemTime::now();
-                self.wishlist_remove(ctx, &msg).await; 
+                self.wishlist_remove(ctx.http(), &msg).await; 
                 self.logger.log_info(format!("Served `.wr` for user `{}` in {}ms", msg.author.id, t.elapsed().unwrap().as_millis()));
             }
             // Ping - Pong
-            else if msg.content.eq(".ping") { msg.reply_ping(ctx.http, "Pong!").await.unwrap(); }
+            else if msg.content.eq(".ping") { msg.reply_ping(ctx.http(), "Pong!").await.unwrap(); }
         }
     }
 
@@ -95,7 +94,7 @@ impl <T> EventHandler for Bot<T>
 impl <T> Bot<T> 
     where T: Logger
 {
-    async fn wishlist_remove(&self, ctx: Context, msg: &Message) {
+    async fn wishlist_remove(&self, http: &Http, msg: &Message) {
         let mut message = MessageBuilder::new();
 
         match parse_series_cards(&msg.content[3..]) {
@@ -116,13 +115,13 @@ impl <T> Bot<T>
             },
         }
 
-        self.send_response( ctx
+        self.send_response( http
             , msg
             , CreateMessage::new().content(message.build())
         ).await;
     }
 
-    async fn wishlist_check(&self, ctx: Context, msg: &Message) {
+    async fn wishlist_check(&self, http: &Http, msg: &Message) {
         // We assume SOFU/NORI only sends messages about drops
         //   this might change in the future so be mindful
         //   it may become a TODO here
@@ -161,14 +160,14 @@ impl <T> Bot<T>
         }
 
         if wishlist_flag {
-            self.send_response( ctx
+            self.send_response( http
                          , msg
                          , CreateMessage::new().content(message.build())
             ).await;
         }
     }
 
-    async fn wishlist_add(&self, ctx: Context, msg: &Message) {
+    async fn wishlist_add(&self, http: &Http, msg: &Message) {
         let mut message = MessageBuilder::new();
 
         match parse_series_cards(&msg.content[3..]) {
@@ -189,13 +188,13 @@ impl <T> Bot<T>
             },
         }
 
-        self.send_response( ctx
+        self.send_response( http
             , msg
             , CreateMessage::new().content(message.build())
         ).await;
     }
 
-    async fn wishlist_list(&self, ctx: Context, msg: &Message) {
+    // async fn wishlist_list(&self, ctx: Context, msg: &Message) {
         // let response = CreateMessage::new();
 
         // let user_id = msg.author.id.to_string();        
@@ -220,14 +219,14 @@ impl <T> Bot<T>
         // self.send_response(ctx, msg, response).await;
 
         // self.interaction_manager.add_interaction(msg.author.id);
-    }
+    // }
 
-    async fn send_response(&self, ctx: Context, original_msg: &Message, builder: CreateMessage) {
+    async fn send_response(&self, http: &Http, original_msg: &Message, builder: CreateMessage) {
         // Reply to original message 
         let builder = builder.reference_message(MessageReference::from(original_msg));
     
         // Try to send
-        if let Err(why) = original_msg.channel_id.send_message(ctx.http, builder).await {
+        if let Err(why) = original_msg.channel_id.send_message(http, builder).await {
             self.logger.log_error(format!("Error sending message: {why:?}"));
         };
     }

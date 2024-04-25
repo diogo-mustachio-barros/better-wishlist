@@ -263,8 +263,10 @@ impl <T> WishlistDB<T>
     async fn user_has_series(&self, user_id: &str, series: &str) -> bool {
         let collection = get_wishlist_collection(&self.db_client);
 
+        let series_search = series_to_search_term(series);
+
         match collection.find_one(
-            doc! {"id": user_id, "series.search": series},
+            doc! {"id": user_id, "series.search": series_search},
             None
         ).await {
             Ok(x) => x.is_some(),

@@ -1,6 +1,9 @@
 /target
+.metals
+.vscode
 
 # run script with secrets
 run.sh
+
 # mongodb playground scripts
 *.mongodb.js

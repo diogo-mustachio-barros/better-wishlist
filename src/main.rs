@@ -1,15 +1,12 @@
-mod wishlist_db;
 mod bot;
 mod util;
-mod logger;
-mod interaction_manager;
+mod component;
 
 use std::sync::Arc;
+use bot::start_bot;
+use component::{logger::StdoutLogger, logger::Logger, wishlist_db::{self, init_db}};
 
-use bot::init_discord_bot;
-use wishlist_db::init_db;
-
-use crate::{logger::{Logger, StdoutLogger}, util::parse_util::parse_secrets};
+use crate::util::parse_util::parse_secrets;
 
 
 #[tokio::main]
@@ -35,7 +32,7 @@ async fn main() {
     
     logger.log_info("Initializing Discord bot");
     // Init discord bot api 
-    let mut discord_client = init_discord_bot(discord_token, db_connection, logger.clone()).await;
+    let mut discord_client = start_bot(discord_token, db_connection, logger.clone()).await;
     logger.log_info("Discord bot initialized");
 
 

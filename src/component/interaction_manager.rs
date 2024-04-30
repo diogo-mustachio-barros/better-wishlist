@@ -1,5 +1,7 @@
+#![allow(dead_code)]
+
 use serenity::all::UserId;
-use std::{cell::RefCell, collections::HashMap, sync::{Arc, RwLock}};
+use std::{collections::HashMap, sync::{Arc, RwLock}};
 
 enum WishlistDisplay {
     Series,
@@ -45,7 +47,7 @@ impl InteractionManager {
         }
     }
     
-    pub fn add_interaction(&self, user_id: UserId) {
+    pub fn add_interaction(&self, _: UserId) {
     //     if self.pending_interactions.get_mut().unwrap().contains_key(&&user_id) {
     //         // delete previous interaction
     //         self.pending_interactions.get_mut().unwrap().remove(&user_id);

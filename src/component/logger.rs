@@ -9,12 +9,14 @@ pub trait Logger {
     fn log_info<T: AsRef<str> + Display>(&self, message: T) { self.log(Priority::Info, message) }
     fn log_warning<T: AsRef<str> + Display>(&self, message: T) { self.log(Priority::Warning, message) }
     fn log_error<T: AsRef<str> + Display>(&self, message: T) { self.log(Priority::Error, message) }
+    fn log_debug<T: AsRef<str> + Display>(&self, message: T) { self.log(Priority::Debug, message) }
 }
 
 pub enum Priority {
     Info,
     Warning,
-    Error
+    Error,
+    Debug
 }
 
 pub struct VoidLogger;
@@ -51,6 +53,11 @@ fn format_with_priority<T: AsRef<str> + Display>(priority: Priority, message: T)
         Priority::Error   => 
             format!("{} {}"
                    , bold(colored_foreground("ERROR:", Color::Red))
-                   , colored_foreground(message, Color::Red))
+                   , colored_foreground(message, Color::Red)),
+        Priority::Debug   =>
+            format!( "{} {}"
+                   , bold(colored_foreground("DEBUG:", Color::Green))
+                   , colored_foreground(message, Color::Green)
+                   )
     }
 }

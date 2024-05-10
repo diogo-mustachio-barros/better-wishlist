@@ -7,10 +7,10 @@ use serenity::all::UserId;
 use serenity::prelude::*;
 
 use crate::commands::*;
-use crate::component::logger::StdoutLogger;
+use crate::components::logger::StdoutLogger;
 use crate::util::parse_util::parse_card_from_drop;
 use crate::wishlist_db::WishlistDB;
-use crate::component::logger::Logger;
+use crate::components::logger::Logger;
 
 const _SOFI_USER_ID:UserId = UserId::new(853629533855809596);
 const _SOFU_USER_ID:UserId = UserId::new(950166445034188820);

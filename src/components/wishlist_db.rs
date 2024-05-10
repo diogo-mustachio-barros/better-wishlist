@@ -3,7 +3,7 @@ use std::{sync::Arc, vec};
 use mongodb::{self, bson::{doc, Bson, Document}, error::Error, options::{ClientOptions, UpdateOptions}, Client};
 use serenity::futures::TryStreamExt;
 
-use crate::component::logger::Logger;
+use crate::components::logger::Logger;
 
 pub struct WishlistDB<T> 
     where T: Logger 

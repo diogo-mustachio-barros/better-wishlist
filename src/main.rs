@@ -1,11 +1,11 @@
 mod bot;
 mod util;
-mod component;
+mod components;
 mod commands;
 
 use std::sync::Arc;
 use bot::start_bot;
-use component::{logger::StdoutLogger, logger::Logger, wishlist_db::{self, init_db}};
+use components::{logger::StdoutLogger, logger::Logger, wishlist_db::{self, init_db}};
 
 use crate::util::parse_util::parse_secrets;
 

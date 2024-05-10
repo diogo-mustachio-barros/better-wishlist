@@ -3,7 +3,7 @@ use poise::samples::HelpConfiguration;
 use poise::CreateReply;
 use serenity::all::MessageBuilder;
 
-use crate::component::logger::Logger;
+use crate::components::logger::Logger;
 use crate::util::parse_util::parse_series_cards;
 use crate::bot::{Context, Error};
 

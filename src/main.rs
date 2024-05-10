@@ -1,6 +1,7 @@
 mod bot;
 mod util;
 mod component;
+mod commands;
 
 use std::sync::Arc;
 use bot::start_bot;

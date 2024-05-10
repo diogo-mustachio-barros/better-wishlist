@@ -1,6 +1,6 @@
 use std::{sync::Arc, vec};
 
-use mongodb::{self, bson::{doc, Document}, error::Error, options::{ClientOptions, UpdateOptions}, Client};
+use mongodb::{self, bson::{doc, Bson, Document}, error::Error, options::{ClientOptions, UpdateOptions}, Client};
 use serenity::futures::TryStreamExt;
 
 use crate::component::logger::Logger;
@@ -86,7 +86,7 @@ impl <T> WishlistDB<T>
 
         // create card objects to insert
         let cards : Vec<Document> = card_names.iter()
-            .map(|card| doc!{"name": card, "search": series_to_search_term(card)})
+            .map(|card| doc!{"name": card, "search": card_to_search_term(card)})
             .collect();
 
         // add all cards in one go
@@ -216,6 +216,54 @@ impl <T> WishlistDB<T>
     //     todo!()
     // }
 
+    pub async fn get_user_wishlisted_series(&self, user_id: &str/*, start: i32, end: i32*/) -> Vec<String> {
+        let collection = get_wishlist_collection(&self.db_client);
+
+        let Ok(mut cursor) =
+            collection.aggregate(
+                [
+                    doc!{"$match": { "id": user_id }},
+                    doc!{"$project": { "series": "$series.name"}}
+                    // doc!{"$project": { "series": { "$slice": ["$series.name", start, end]}}}
+                ],
+                None
+            ).await 
+            else { todo!() };
+
+        match cursor.advance().await {
+            Ok(true) => (),
+            Ok(false) => return vec![], // TODO maybe log a warning?
+            Err(err) => {
+                self.logger.log_error(format!("get_user_wishlisted_series: {}", err.to_string()));
+                return vec![];
+            },
+        }
+
+        let Ok(x) = cursor.deserialize_current()
+        else {
+            // TODO log error
+            return vec![];
+        };
+
+        let series_vec = x.get_array("series");
+        if let Err(_) = series_vec {
+            // TODO log error
+            return vec![];
+        }
+
+        let mut ret = vec![];
+        for opt_series in series_vec.unwrap().iter().map(Bson::as_str) {
+            match opt_series {
+                Some(series) => ret.push(series.to_string()),
+                None => {
+                    self.logger.log_error("get_user_wishlisted_series: could not parse Bson as string")
+                }
+            }
+        }
+
+        return ret;
+    }
+
     pub async fn get_user_wishlisted_cards_count(&self, user_id: &str, series: &str) -> i32 {
         let collection = get_wishlist_collection(&self.db_client);
 
@@ -257,6 +305,63 @@ impl <T> WishlistDB<T>
             }
         } else {
             0
+        }
+    }
+
+    pub async fn get_user_wishlisted_cards(&self, user_id: &str, series: &str) -> Vec<String> {
+        let collection = get_wishlist_collection(&self.db_client);
+
+        let series_search = series_to_search_term(series);
+
+        let res =
+            collection.aggregate(
+                [
+                    doc!{ "$match": { "id": user_id, "series.search": &series_search }},
+                    doc!{ "$project": { "series":
+                    { "$filter": 
+                        { "input":"$series",
+                          "as": "serie",
+                          "cond": 
+                            { "$eq": ["$$serie.search", series_search] }
+                        }
+                    }}},
+                    doc! { "$project": {
+                        "cards": { "$map": { "input": { "$arrayElemAt": ["$series.cards", 0]}, "as": "card", "in": "$$card.name" } }
+                      }}
+                ],
+                None
+            ).await;
+
+        
+        if let Err(err) = res { 
+            self.logger.log_error(format!("get_user_wishlisted_cards_count: {}", err.to_string()));
+            return vec![]; 
+        };
+
+        let mut cursor = res.unwrap(); 
+        if cursor.advance().await.unwrap() {
+            match cursor.current().get_array("cards") {
+                Ok(cards) => {
+                    
+                    let mut vec_string: Vec<String> = Vec::new();
+                    for x in cards.into_iter() {
+                        match x {
+                            Err(_) => (),
+                            Ok(card) => {
+                                vec_string.push(card.as_str().unwrap().to_string());
+                            }
+                        }
+                    }
+                    
+                    vec_string
+                },
+                Err(err) => {
+                    self.logger.log_error(format!("get_user_wishlisted_cards_count: {}", err.to_string()));
+                    vec![]
+                }
+            }
+        } else {
+            vec![]
         }
     }
 

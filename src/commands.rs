@@ -58,30 +58,52 @@ pub async fn wa(
 #[poise::command(prefix_command)]
 pub async fn wr(
     ctx: Context<'_>,
-    #[description = "<series> || <card name> (, <card name>)*>"]
+    #[description = "<series> ( || <card name> (, <card name>)*> )?"]
     #[rest] command: String,
 ) -> Result<(), Error> 
 {
-    match parse_series_cards(&command) {
-        None => { ctx.reply("Incorrect argument format. Check `.help wr`").await.unwrap(); },
-        Some((series, card_names)) => {
-            let mut message = MessageBuilder::new();
+    if !command.contains("||") {
+        // Delete entire series
 
-            let user_id = ctx.author().id.to_string();
+        let user_id = ctx.author().id.to_string();
+        
+        let res = 
+        ctx.data().wishlist_db.remove_series_from_wishlist(&user_id, &command).await; 
+        
+        let mut message = MessageBuilder::new();
+        match res {
+            Ok(amount) => message.push(format!("Removed series {command} with {amount} card(s) from your wishlist!")),
+            Err(err) => {
+                ctx.data().logger.log_error(err.to_string());
+                message.push(format!("Something went wrong removing a series from your wishlist."))
+            }
+        };
 
-            let res = 
-            ctx.data().wishlist_db.remove_all_from_wishlist(&user_id, series, card_names).await; 
+        ctx.reply(message.build()).await.unwrap();
+    } else {
+        // Delete selected cards from series
 
-            match res {
-                Ok(amount) => message.push(format!("Removed {amount} card(s) from your wishlist!")),
-                Err(err) => {
-                    ctx.data().logger.log_error(err.to_string());
-                    message.push(format!("Something went wrong removing cards from your wishlist."))
-                }
-            };
-
-            ctx.reply(message.build()).await.unwrap();
-        },
+        match parse_series_cards(&command) {
+            None => { ctx.reply("Incorrect argument format. Check `.help wr`").await.unwrap(); },
+            Some((series, card_names)) => {
+                let mut message = MessageBuilder::new();
+    
+                let user_id = ctx.author().id.to_string();
+    
+                let res = 
+                    ctx.data().wishlist_db.remove_all_from_wishlist(&user_id, series, card_names).await; 
+    
+                match res {
+                    Ok(amount) => message.push(format!("Removed {amount} card(s) from your wishlist!")),
+                    Err(err) => {
+                        ctx.data().logger.log_error(err.to_string());
+                        message.push(format!("Something went wrong removing cards from your wishlist."))
+                    }
+                };
+    
+                ctx.reply(message.build()).await.unwrap();
+            },
+        }
     }
 
     Ok(())

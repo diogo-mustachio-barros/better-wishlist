@@ -134,7 +134,7 @@ impl <T> WishlistDB<T>
                 let curr_amount = self.get_user_wishlisted_cards_count(user_id, series).await;
 
                 if curr_amount == 0 {
-                    self.remove_series_from_wishlist(user_id, series).await;
+                    self.remove_series_from_wishlist(user_id, series).await?;
                 }
 
                 Ok(initial_amount - curr_amount)
@@ -306,10 +306,11 @@ impl <T> WishlistDB<T>
         }
     }
 
-    async fn remove_series_from_wishlist(&self, user_id:&str, series:&str) {
+    pub async fn remove_series_from_wishlist(&self, user_id:&str, series:&str) -> Result<i32, Error> {
         let collection = get_wishlist_collection(&self.db_client);
 
         let series_search = series_to_search_term(series);
+        let series_cards_amount = self.get_user_wishlisted_cards_count(user_id, series).await;
 
         let res = 
             collection.update_one( 
@@ -319,8 +320,11 @@ impl <T> WishlistDB<T>
             ).await;
 
         if let Err(err) = res {
-            self.logger.log_error(format!("remove_series_from_wishlist: {}", err.to_string()))
+            self.logger.log_error(format!("remove_series_from_wishlist: {}", err.to_string()));
+            return Err(err);
         }
+
+        return Ok(series_cards_amount);
     }
 }
 

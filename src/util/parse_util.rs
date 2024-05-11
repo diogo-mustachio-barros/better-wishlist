@@ -42,7 +42,7 @@ pub fn parse_card_from_drop(line: &str) -> Option<(&str, &str)> {
 }
 
 pub fn parse_series_cards(line: &str) -> Option<(&str, Vec<&str>)> {
-    let re = Regex::new(r"\s+(.+)\s*\|\|\s*(.+)").unwrap();
+    let re = Regex::new(r"\s*(.+)\s*\|\|\s*(.+)").unwrap();
 
     re.captures(&line)
       .map(|capt| {

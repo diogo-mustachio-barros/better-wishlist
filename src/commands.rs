@@ -34,7 +34,7 @@ pub async fn wa(
                 ctx.data().wishlist_db.add_all_to_wishlist(&user_id, series, card_names).await;
 
             match res {
-                Ok(added_cards_count) => message.push(format!("Added {added_cards_count} card(s) to your wishlist!")),
+                Ok(added_cards_count) => message.push(format!("Added {added_cards_count} card(s) from `{series}` to your wishlist!")),
                 Err(err) =>  {
                     ctx.data().logger.log_error(format!(".wa | {}", err.to_string()));
                     message.push(format!("Something went wrong adding cards to your wishlist."));
@@ -53,7 +53,7 @@ pub async fn wa(
 // ##############################  WISHLIST REMOVE
 // ##############################
 
-/// Removes all selected cards from a series to your wishlist.
+/// Removes all selected cards from a series OR an entire series (if no cards are specified) from your wishlist.
 /// Will only remove cards already in your wishlist.
 #[poise::command(prefix_command)]
 pub async fn wr(
@@ -72,7 +72,7 @@ pub async fn wr(
         
         let mut message = MessageBuilder::new();
         match res {
-            Ok(amount) => message.push(format!("Removed series {command} with {amount} card(s) from your wishlist!")),
+            Ok(amount) => message.push(format!("Removed series `{command}` with {amount} card(s) from your wishlist!")),
             Err(err) => {
                 ctx.data().logger.log_error(err.to_string());
                 message.push(format!("Something went wrong removing a series from your wishlist."))

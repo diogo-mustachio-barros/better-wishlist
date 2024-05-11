@@ -114,6 +114,7 @@ dependencies = [
  "chrono",
  "mongodb",
  "poise",
+ "rand",
  "regex",
  "serenity",
  "tokio",

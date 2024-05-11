@@ -1,6 +1,7 @@
 use poise::serenity_prelude as serenity;
 use poise::samples::HelpConfiguration;
 use poise::CreateReply;
+use rand::Rng;
 use serenity::all::MessageBuilder;
 
 use crate::components::logger::Logger;
@@ -11,15 +12,18 @@ use crate::bot::{Context, Error};
 // ##############################  WISHLIST ADD
 // ##############################
 
+/// Adds all selected cards from a series to your wishlist.
+/// Will not add duplicates.
 #[poise::command(prefix_command)]
 pub async fn wa(
     ctx: Context<'_>,
-    #[rest] content: String,
+    #[description = "<series> || <card name> (, <card name>)*>"]
+    #[rest] command: String,
 ) -> Result<(), Error> 
 {
-    match parse_series_cards(&content) {
+    match parse_series_cards(&command) {
         None => { 
-            ctx.reply("Incorrect arguments. Usage: `.wa <series name> || <card name> (, <card name>)*`").await.unwrap();
+            ctx.reply("Incorrect argument format. Check `.help wa`").await.unwrap();
         },
         Some((series, card_names)) => {
             let mut message = MessageBuilder::new();
@@ -49,14 +53,17 @@ pub async fn wa(
 // ##############################  WISHLIST REMOVE
 // ##############################
 
+/// Removes all selected cards from a series to your wishlist.
+/// Will only remove cards already in your wishlist.
 #[poise::command(prefix_command)]
 pub async fn wr(
     ctx: Context<'_>,
-    #[rest] content: String,
+    #[description = "<series> || <card name> (, <card name>)*>"]
+    #[rest] command: String,
 ) -> Result<(), Error> 
 {
-    match parse_series_cards(&content) {
-        None => { ctx.reply("Incorrect arguments. Usage: `.wr <series name> || <card name> (, <card name>)*`").await.unwrap(); },
+    match parse_series_cards(&command) {
+        None => { ctx.reply("Incorrect argument format. Check `.help wr`").await.unwrap(); },
         Some((series, card_names)) => {
             let mut message = MessageBuilder::new();
 
@@ -84,9 +91,11 @@ pub async fn wr(
 // ##############################  WISHLIST LIST
 // ##############################
 
+/// List all series, or cards from a series in your wishlist.
 #[poise::command(prefix_command)]
 pub async fn wl(
     ctx: Context<'_>,
+    #[description = "Series name"]
     #[rest] content: Option<String>,
 ) -> Result<(), Error> 
 {
@@ -122,12 +131,24 @@ pub async fn wl(
 // ##############################  PING
 // ##############################
 
-#[poise::command(prefix_command)]
+const PONG_GIF_LINKS: [&'static str; 6]  = [
+    "https://tenor.com/view/pong-gif-26462133",
+    "https://tenor.com/view/bombardierul-pazitor-pong-maca-pong-gif-25389982",
+    "https://tenor.com/view/get-ponged-pong-lol-troll-gif-20311938",
+    "https://tenor.com/view/ping-pong-gif-26618047",
+    "https://tenor.com/view/ping-pong-avast-alone-waiting-gif-8485903",
+    "https://tenor.com/view/pingpong-ping-pong-pong-pro-pong-table-tennis-gif-12226811345916051594"
+];
+
+/// Pong!
+#[poise::command(prefix_command, category = "Others")]
 pub async fn ping(
     ctx: Context<'_>,
 ) -> Result<(), Error> 
 {
-    ctx.reply("Pong!").await?;
+    let random_n = rand::thread_rng().gen_range(0..PONG_GIF_LINKS.len());
+
+    ctx.reply(PONG_GIF_LINKS[random_n]).await?;
 
     Ok(())
 }
@@ -153,8 +174,8 @@ pub async fn help(
         };
     }
     let extra_text_at_bottom = "\
-Type `?help command` for more info on a command.
-You can edit your `?help` message to the bot and the bot will edit its response.";
+Type `.help command` for more info on a command.
+You can edit your `.help` message to the bot and the bot will edit its response.";
 
     let config = HelpConfiguration {
         show_subcommands: true,

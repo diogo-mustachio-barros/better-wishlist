@@ -3,6 +3,7 @@ use poise::samples::HelpConfiguration;
 use poise::CreateReply;
 use rand::Rng;
 use serenity::all::MessageBuilder;
+use ::serenity::all::User;
 
 use crate::components::logger::Logger;
 use crate::util::parse_util::parse_series_cards;
@@ -118,10 +119,11 @@ pub async fn wr(
 pub async fn wl(
     ctx: Context<'_>,
     #[description = "Series name"]
+    user: Option<User>,
     #[rest] content: Option<String>,
 ) -> Result<(), Error> 
 {
-    let user_id = ctx.author().id;
+    let user_id = user.map(|user| user.id).unwrap_or(ctx.author().id);
 
     let pages = match content {
         None => {

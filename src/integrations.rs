@@ -39,16 +39,20 @@ pub async fn integration_ssl (
         .timeout(Duration::from_secs(10))
         .await
     {
-        let Ok(first_msg) = ctx.http().get_message(ctx.channel_id(), ctx.id().into()).await 
-        else {
-            // TODO: log error, original message cannot be retrieved
-            return Ok(());
+        let first_msg = match ctx.http().get_message(ctx.channel_id(), ctx.id().into()).await {
+            Ok(msg) => msg,
+            Err(err) => {
+                ctx.data().logger.log_error(format!("integration_ssl: unable to retrieve {}'s message:\n{err:?}", ctx.author()));
+                return Err(Box::new(err));
+            }
         };
 
-        let Ok(sofi_msg) = ctx.http().get_message(first_reply.channel_id, first_reply.id).await
-        else {
-            // TODO: log error, SOFI ssl message cannot be retrieved
-            return Ok(());
+        let sofi_msg = match ctx.http().get_message(first_reply.channel_id, first_reply.id).await {
+            Ok(msg) => msg,
+            Err(err) => {
+                ctx.data().logger.log_error(format!("integration_ssl: unable to retrieve SOFI's reply to {}:\n{err:?}", ctx.author()));
+                return Err(Box::new(err));
+            }
         };
 
         if !is_series_lookup(&sofi_msg) {
@@ -175,7 +179,7 @@ pub async fn integration_sg (
         let description = embed.description.clone().unwrap();
         let (series, card) = parse_series_from_give_command(description.as_str()).unwrap();
         let has_card = ctx.data().wishlist_db.user_has_card(target_user.id.to_string().as_str(), series, card).await;
-        ctx.data().logger.log_debug(format!("'{series}' | '{card}' | {has_card}"));
+        
         if has_card {
             sofi_msg.react(ctx.http(), ReactionType::Unicode("❌".to_string())).await.unwrap();
 
@@ -191,9 +195,9 @@ pub async fn integration_sg (
                 match &reaction.emoji {
                     ReactionType::Unicode(emoji) if emoji == "❌" => {
                         reaction.delete_all(ctx.http()).await?;
-                        ctx.data().logger.log_debug("Removing");
+                        
                         wr_cards( ctx.serenity_context(), 
-                                  Either::Left(&first_msg), 
+                                  Either::Right(ctx.channel_id()), 
                                   ctx.data(), 
                                   target_user.id, 
                                   series, 

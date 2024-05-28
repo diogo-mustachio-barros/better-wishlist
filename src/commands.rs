@@ -169,6 +169,7 @@ pub async fn wr_cards(
             match user_msg {
                 Either::Left(msg) => msg.reply_ping(ctx, message.build()).await.unwrap(),
                 Either::Right(channel_id) => {
+                    message.push(" ");
                     message.user(user_id);
                     let builder = CreateMessage::new().content(message.build());
                     ctx.http.send_message(channel_id, vec![], &builder).await.unwrap()

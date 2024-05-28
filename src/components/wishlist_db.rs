@@ -306,6 +306,21 @@ impl <T> WishlistDB<T>
         }
     }
 
+    pub async fn user_has_card(&self, user_id: &str, series: &str, card: &str) -> bool {
+        let collection = get_wishlist_collection(&self.db_client);
+
+        let series_search = series_to_search_term(series);
+        let card_search = card_to_search_term(card);
+
+        match collection.find_one(
+            doc!{ "id": user_id, "series": { "$elemMatch": {"search": series_search, "cards.search": card_search}}},
+            None
+        ).await {
+            Ok(x) => x.is_some(),
+            Err(_) => false,
+        }
+    }
+
     pub async fn remove_series_from_wishlist(&self, user_id:&str, series:&str) -> Result<i32, Error> {
         let collection = get_wishlist_collection(&self.db_client);
 

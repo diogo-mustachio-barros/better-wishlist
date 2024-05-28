@@ -2,20 +2,24 @@ use std::sync::Arc;
 
 use poise::serenity_prelude as serenity;
 
-use ::serenity::all::{CreateMessage, Http, Message, MessageBuilder, MessageReference};
+use ::serenity::all::{ReactionCollector, ReactionType};
+use ::serenity::all::{CreateMessage, Message, MessageBuilder, MessageReference};
 use serenity::all::UserId;
 use serenity::prelude::*;
 
-use crate::commands::*;
 use crate::components::logger::StdoutLogger;
+use crate::commands::*;
+use crate::integrations::*;
+use crate::util::either::Either;
 use crate::util::parse_util::parse_card_from_drop;
 use crate::wishlist_db::WishlistDB;
 use crate::components::logger::Logger;
 
-const _SOFI_USER_ID:UserId = UserId::new(853629533855809596);
-const _SOFU_USER_ID:UserId = UserId::new(950166445034188820);
-const _NORI_USER_ID:UserId = UserId::new(742070928111960155);
-const _ME_USER_ID :UserId = UserId::new(234822770385485824);
+pub const _SOFI_USER_ID : UserId = UserId::new(853629533855809596);
+pub const _SOFU_USER_ID : UserId = UserId::new(950166445034188820);
+pub const _NORI_USER_ID : UserId = UserId::new(742070928111960155);
+pub const _ME_USER_ID   : UserId = UserId::new(234822770385485824);
+pub const _BOT_USER_ID  : UserId = UserId::new(1219361361348530298);
 
 pub struct Data {
     pub wishlist_db: WishlistDB<StdoutLogger>,
@@ -29,19 +33,26 @@ pub async fn start_bot(token:impl AsRef<str>, wishlist_db: WishlistDB<StdoutLogg
     // Set gateway intents, which decides what events the bot will be notified about
     let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::DIRECT_MESSAGES
-        | GatewayIntents::MESSAGE_CONTENT;                      
+        | GatewayIntents::MESSAGE_CONTENT
+        | GatewayIntents::GUILD_MESSAGE_REACTIONS;                      
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: vec![
-                wa(), 
-                wr(), 
+                // Commands
+                command_wa(), 
+                command_wr(), 
                 wl(),
+                // Integration
+                integration_ssl(),
+                integration_sg(),
+                // Others
                 ping(), 
                 help(),
                 ],
             prefix_options: poise::PrefixFrameworkOptions {
                 prefix: Some(".".into()),
+                stripped_dynamic_prefix: Some(|ctx, msg, data| Box::pin(stripped_dynamic_prefix(ctx, msg, data))), 
                 case_insensitive_commands: true,
                 ..Default::default()
             },
@@ -78,6 +89,21 @@ pub async fn start_bot(token:impl AsRef<str>, wishlist_db: WishlistDB<StdoutLogg
     return client;
 }
 
+async fn stripped_dynamic_prefix<'a>(
+    _: &'a poise::serenity_prelude::Context, 
+    msg:&'a Message, 
+    _:&'a Data,
+) -> Result<Option<(&'a str, &'a str)>, Error> 
+{
+    if INTEGRATED_COMMANDS.iter().any(|x| msg.content.starts_with(x)) {
+        Ok(Some(("", msg.content.as_str())))
+    // } else if msg.content.starts_with(".") {
+    //     Ok(Some(msg.content.split_at(1)))
+    } else {
+        Ok(None)
+    }
+}
+
 async fn event_handler(
     ctx: &serenity::Context,
     event: &serenity::FullEvent,
@@ -87,17 +113,50 @@ async fn event_handler(
     match event {
         serenity::FullEvent::Ready { .. } => {
             data.logger.log_info("Connected to Discord");
+            Ok(())
         }
+
+        // serenity::FullEvent::MessageUpdate { old_if_available, new, event } => {
+        //     // TODO: it seems that currently both `new` and `old_if_available` come as None
+        //     //       because caching is not correctly used. might look into this in the future
+        //     if new.is_some() {
+        //         let msg = new.clone().unwrap(); 
+        //         return handle(ctx, _framework, data, &msg).await;
+        //     } 
+
+        //     if old_if_available.is_some() {
+        //         let mut msg = old_if_available.clone().unwrap();
+        //         event.apply_to_message(&mut msg);
+        //         return handle(ctx, _framework, data, &msg).await;
+        //     }
+
+        //     if let Ok(msg) = ctx.http().get_message(event.channel_id, event.id).await {
+        //         return handle(ctx, _framework, data, &msg).await;
+        //     }
+
+        //     Ok(())
+        // }
+
         serenity::FullEvent::Message { new_message } => {
-            match new_message.author.id {
-                _NORI_USER_ID => {
-                    wishlist_check(ctx, new_message, data).await;
-                }
-                _ => ()
-            }
+            handle(ctx, _framework, data, new_message).await
         }
-        _ => {}
+        _ => { Ok(()) }
     }
+}
+
+async fn handle(
+    ctx: &serenity::Context,
+    _framework: poise::FrameworkContext<'_, Data, Error>, 
+    data: &Data,
+    msg:&Message 
+) -> Result<(), Error> {
+    match msg.author.id {
+        _NORI_USER_ID => {
+            wishlist_check(ctx, msg, data).await?;
+        }
+        _ => ()
+    }
+
     Ok(())
 }
 
@@ -118,7 +177,7 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
     }
 }
 
-async fn wishlist_check(ctx: &serenity::Context, msg: &Message, data: &Data) {
+async fn wishlist_check(ctx: &serenity::Context, msg: &Message, data: &Data) -> Result<(), Error> {
     // We assume SOFU/NORI only sends messages about drops
     //   this might change in the future so be mindful
     //   it may become a TODO here
@@ -126,8 +185,7 @@ async fn wishlist_check(ctx: &serenity::Context, msg: &Message, data: &Data) {
     let mut message = MessageBuilder::new();
     message.push("A card from your wishlist is dropping!\n");
 
-    let mut wishlist_flag = false;
-
+    let mut wishlist_pings: Vec<(&str, &str, Vec<String>)> = vec![];
     for line in msg.content.lines() {
         if let Some((series, card)) = parse_card_from_drop(line) {
             let wishlisted_res = 
@@ -142,7 +200,7 @@ async fn wishlist_check(ctx: &serenity::Context, msg: &Message, data: &Data) {
 
             if wishlisted.len() > 0 
             {
-                wishlist_flag = true;
+                wishlist_pings.push((series, card, wishlisted.clone()));
                 message.push(format!("{}: ", card));
 
                 for user in wishlisted {
@@ -156,18 +214,69 @@ async fn wishlist_check(ctx: &serenity::Context, msg: &Message, data: &Data) {
         }
     }
 
-    if wishlist_flag {
-        send_response(&data.logger, ctx.http(), msg, CreateMessage::new().content(message.build())).await;
+    if wishlist_pings.is_empty() {
+        return Ok(());
     }
-}
 
+    // Build reply to original message 
+    let builder = CreateMessage::new().content(message.build()).reference_message(MessageReference::from(msg));
 
-async fn send_response(logger: &Arc<StdoutLogger>, http: &Http, original_msg: &Message, builder: CreateMessage) {
-    // Reply to original message 
-    let builder = builder.reference_message(MessageReference::from(original_msg));
+    // Try to send response
+    match msg.channel_id.send_message(ctx.http(), builder).await {
+        Err(why) => {
+            data.logger.log_error(format!("Error sending message: {why:?}"));
+            return Err(Box::new(why));
+        }
+        Ok(reply_msg) => {
+            if wishlist_pings.len() > 0 { reply_msg.react(ctx, ReactionType::Unicode("1️⃣".to_string())).await?; }
+            if wishlist_pings.len() > 1 { reply_msg.react(ctx, ReactionType::Unicode("2️⃣".to_string())).await?; }
+            if wishlist_pings.len() > 2 { reply_msg.react(ctx, ReactionType::Unicode("3️⃣".to_string())).await?; }
 
-    // Try to send
-    if let Err(why) = original_msg.channel_id.send_message(http, builder).await {
-        logger.log_error(format!("Error sending message: {why:?}"));
-    };
+            while let Some(reaction) = ReactionCollector::new(ctx)
+                // only reactions to our reply
+                .message_id(reply_msg.id)
+                // Timeout when there's no reaction for 60 seconds
+                .timeout(std::time::Duration::from_secs(60))
+                .await
+            {
+                let reaction_user = reaction.user(ctx).await?;
+                let reaction_user_id = reaction_user.id;
+
+                let opt_ping = match &reaction.emoji { //1️⃣ 2️⃣ 3️⃣
+                    ReactionType::Unicode(emoji) if emoji == "1️⃣" => {
+                        Some(0)
+                    }
+                    ReactionType::Unicode(emoji) if emoji == "2️⃣" => {
+                        Some(1)
+                    }
+                    ReactionType::Unicode(emoji) if emoji == "3️⃣" => {
+                        Some(2)
+                    }
+                    _ => None
+                }.map(|index| wishlist_pings.get_mut(index).unwrap());
+
+                match opt_ping {
+                    Some(ping) => {
+                        if ping.2.contains(&reaction_user_id.to_string()) {
+                            // remove user that reacted from wishlist_pings internal list if the user is in there
+                            ping.2.retain(|user| *user != reaction_user_id.to_string());
+        
+                            // if it was there, activate wr for him
+                            wr_cards( ctx, 
+                                Either::Right(reaction.channel_id), 
+                                data, 
+                                reaction_user_id, 
+                                ping.0, 
+                                vec![ping.1],
+                                None
+                            ).await.unwrap();
+                        }
+                    }
+                    None => {}
+                }
+            }
+
+            return Ok(());
+        }
+    }
 }

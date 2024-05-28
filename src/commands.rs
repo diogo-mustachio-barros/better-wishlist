@@ -2,12 +2,14 @@ use poise::serenity_prelude as serenity;
 use poise::samples::HelpConfiguration;
 use poise::CreateReply;
 use rand::Rng;
+use ::serenity::all::{ChannelId, ComponentInteractionCollector, CreateMessage, EditMessage, UserId};
 use serenity::all::MessageBuilder;
-use ::serenity::all::User;
+use serenity::all::{Message, User};
 
 use crate::components::logger::Logger;
+use crate::util::either::Either;
 use crate::util::parse_util::parse_series_cards;
-use crate::bot::{Context, Error};
+use crate::bot::{Context, Data, Error};
 
 // ##############################
 // ##############################  WISHLIST ADD
@@ -15,39 +17,68 @@ use crate::bot::{Context, Error};
 
 /// Adds all selected cards from a series to your wishlist.
 /// Will not add duplicates.
-#[poise::command(prefix_command)]
-pub async fn wa(
+#[poise::command(prefix_command, rename = "wa")]
+pub async fn command_wa (
     ctx: Context<'_>,
-    #[description = "<series> || <card name> (, <card name>)*>"]
+    #[description = "<series> || <card name> (, <card name>)*"]
     #[rest] command: String,
 ) -> Result<(), Error> 
 {
     match parse_series_cards(&command) {
         None => { 
             ctx.reply("Incorrect argument format. Check `.help wa`").await.unwrap();
+            Ok(())
         },
         Some((series, card_names)) => {
-            let mut message = MessageBuilder::new();
-
-            let user_id = ctx.author().id.to_string();
-
-            let res = 
-                ctx.data().wishlist_db.add_all_to_wishlist(&user_id, series, card_names).await;
-
-            match res {
-                Ok(added_cards_count) => message.push(format!("Added {added_cards_count} card(s) from `{series}` to your wishlist!")),
-                Err(err) =>  {
-                    ctx.data().logger.log_error(format!(".wa | {}", err.to_string()));
-                    message.push(format!("Something went wrong adding cards to your wishlist."));
-                    return Err(Box::new(err));
-                }
-            };
-
-            ctx.reply(message.build()).await.unwrap();
+           wa(ctx.serenity_context()
+             , &ctx.http().get_message(ctx.channel_id(), ctx.id().into()).await.unwrap()
+             , ctx.data()
+             , ctx.author().id
+             , series
+             , card_names
+             , None
+            ).await.map(|_| ())
         },
-    }    
+    }
+}
 
-    Ok(())
+pub async fn wa(
+    ctx: &serenity::Context, 
+    msg: &Message, 
+    data: &Data, 
+    user_id: UserId, 
+    series: &str, 
+    card_names: Vec<&str>,
+    prev_response: Option<(Message, i32)>
+) -> Result<(Message, i32), Error> 
+{
+    let mut message = MessageBuilder::new();
+
+    let res = 
+        data.wishlist_db.add_all_to_wishlist(&user_id.to_string(), series, card_names).await;
+
+    match res {
+        Ok(added_cards_count) => {
+            match prev_response {
+                Some((mut prev_msg, prev_added_count)) => {
+                    let total = added_cards_count + prev_added_count;
+                    message.push(format!("Added {total} card(s) from `{series}` to your wishlist!"));
+                    prev_msg.edit(ctx, EditMessage::new().content(message.build())).await.unwrap();
+                    return Ok((prev_msg, total));
+                },
+                None => {
+                    message.push(format!("Added {added_cards_count} card(s) from `{series}` to your wishlist!"));
+                    let response_msg = msg.reply_ping(ctx, message.build()).await.unwrap();
+                    return Ok((response_msg, added_cards_count));
+                }
+            }
+        },
+        Err(err) =>  {
+            data.logger.log_error(format!(".wa | {}", err.to_string()));
+            message.push(format!("Something went wrong adding cards to your wishlist."));
+            return Err(Box::new(err));
+        }
+    };
 }
 
 // ##############################
@@ -56,58 +87,113 @@ pub async fn wa(
 
 /// Removes all selected cards from a series OR an entire series (if no cards are specified) from your wishlist.
 /// Will only remove cards already in your wishlist.
-#[poise::command(prefix_command)]
-pub async fn wr(
+#[poise::command(prefix_command, rename = "wr")]
+pub async fn command_wr(
     ctx: Context<'_>,
-    #[description = "<series> ( || <card name> (, <card name>)*> )?"]
+    #[description = "<series> ( || <card name> (, <card name>)* )?"]
     #[rest] command: String,
 ) -> Result<(), Error> 
 {
     if !command.contains("||") {
         // Delete entire series
-
-        let user_id = ctx.author().id.to_string();
-        
-        let res = 
-        ctx.data().wishlist_db.remove_series_from_wishlist(&user_id, &command).await; 
-        
-        let mut message = MessageBuilder::new();
-        match res {
-            Ok(amount) => message.push(format!("Removed series `{command}` with {amount} card(s) from your wishlist!")),
-            Err(err) => {
-                ctx.data().logger.log_error(err.to_string());
-                message.push(format!("Something went wrong removing a series from your wishlist."))
-            }
-        };
-
-        ctx.reply(message.build()).await.unwrap();
+        wr_series( ctx.serenity_context()
+                 , &ctx.http().get_message(ctx.channel_id(), ctx.id().into()).await.unwrap()
+                 , ctx.data()
+                 , ctx.author().id
+                 , command.as_str()
+                 ).await;       
     } else {
         // Delete selected cards from series
-
         match parse_series_cards(&command) {
             None => { ctx.reply("Incorrect argument format. Check `.help wr`").await.unwrap(); },
             Some((series, card_names)) => {
-                let mut message = MessageBuilder::new();
-    
-                let user_id = ctx.author().id.to_string();
-    
-                let res = 
-                    ctx.data().wishlist_db.remove_all_from_wishlist(&user_id, series, card_names).await; 
-    
-                match res {
-                    Ok(amount) => message.push(format!("Removed {amount} card(s) from your wishlist!")),
-                    Err(err) => {
-                        ctx.data().logger.log_error(err.to_string());
-                        message.push(format!("Something went wrong removing cards from your wishlist."))
-                    }
-                };
-    
-                ctx.reply(message.build()).await.unwrap();
-            },
+                wr_cards( ctx.serenity_context()
+                        , Either::Left(&ctx.http().get_message(ctx.channel_id(), ctx.id().into()).await.unwrap())
+                        , ctx.data()
+                        , ctx.author().id
+                        , series
+                        , card_names
+                        , None
+                        ).await.unwrap();
+            }
         }
     }
 
     Ok(())
+}
+
+pub async fn wr_cards(
+    ctx: &serenity::Context, 
+    user_msg: Either<&Message, ChannelId>, 
+    data: &Data, 
+    user_id: UserId, 
+    series: &str, 
+    card_names: Vec<&str>,
+    prev_response: Option<(Message, i32)>
+) -> Result<(Message, i32), Error> 
+{
+    let mut message = MessageBuilder::new();
+
+    let res = 
+        data.wishlist_db.remove_all_from_wishlist(&user_id.to_string(), series, card_names).await; 
+
+    match res {
+        Ok(amount) => {
+            match prev_response {
+                Some((mut prev_msg, prev_removed_count)) => {
+                    let total = prev_removed_count + amount;
+
+                    message.push(format!("Removed {total} card(s) from your wishlist!"));
+                    prev_msg.edit(ctx, EditMessage::new().content(message.build())).await.unwrap();
+
+                    return Ok((prev_msg, total));
+                },
+                None => {
+                    message.push(format!("Removed {amount} card(s) from your wishlist!"));
+                    let response = match user_msg {
+                        Either::Left(msg) => msg.reply_ping(ctx, message.build()).await.unwrap(),
+                        Either::Right(channel_id) => {
+                            message.user(user_id);
+                            let builder = CreateMessage::new().content(message.build());
+                            ctx.http.send_message(channel_id, vec![], &builder).await.unwrap()
+                        }
+                    };
+
+                    return Ok((response, amount));
+                }
+            }
+        },
+        Err(err) => {
+            data.logger.log_error(err.to_string());
+            message.push(format!("Something went wrong removing cards from your wishlist."));
+            match user_msg {
+                Either::Left(msg) => msg.reply_ping(ctx, message.build()).await.unwrap(),
+                Either::Right(channel_id) => {
+                    message.user(user_id);
+                    let builder = CreateMessage::new().content(message.build());
+                    ctx.http.send_message(channel_id, vec![], &builder).await.unwrap()
+                }
+            };
+
+            return Err(Box::new(err));
+        }
+    };
+}
+
+pub async fn wr_series(ctx: &serenity::Context, msg: &Message, data: &Data, user_id: UserId, series: &str) {
+    let res = 
+    data.wishlist_db.remove_series_from_wishlist(&user_id.to_string(), series).await; 
+    
+    let mut message = MessageBuilder::new();
+    match res {
+        Ok(amount) => message.push(format!("Removed series `{series}` with {amount} card(s) from your wishlist!")),
+        Err(err) => {
+            data.logger.log_error(err.to_string());
+            message.push(format!("Something went wrong removing a series from your wishlist."))
+        }
+    };
+
+    msg.reply_ping(ctx, message.build()).await.unwrap();
 }
 
 // ##############################
@@ -118,8 +204,9 @@ pub async fn wr(
 #[poise::command(prefix_command)]
 pub async fn wl(
     ctx: Context<'_>,
-    #[description = "Series name"]
+    #[description = "Target user"]
     user: Option<User>,
+    #[description = "Series name"]
     #[rest] content: Option<String>,
 ) -> Result<(), Error> 
 {
@@ -276,7 +363,7 @@ pub async fn paginate (
 
     // Loop through incoming interactions with the navigation buttons
     let mut current_page = 0;
-    while let Some(press) = serenity::collector::ComponentInteractionCollector::new(ctx)
+    while let Some(press) = ComponentInteractionCollector::new(ctx)
         // We defined our button IDs to start with `ctx_id`. If they don't, some other command's
         // button was pressed
         .filter(move |press| press.data.custom_id.starts_with(&ctx_id.to_string()))

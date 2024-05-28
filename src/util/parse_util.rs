@@ -4,9 +4,11 @@ use regex::Regex;
 
 
 
-const DISCORD_TOKEN_KEY:&str = "DISCORD_TOKEN";
-const MONGODB_URL_KEY  :&str = "MONGODB_URL";
+const DISCORD_TOKEN_KEY : &str = "DISCORD_TOKEN";
+const MONGODB_URL_KEY   : &str = "MONGODB_URL";
 
+
+const HAS_CARD_EMOJI : &str = "☑️";
 
 
 pub fn parse_secrets() -> Option<(String, String)> {
@@ -32,7 +34,7 @@ pub fn parse_card_from_drop(line: &str) -> Option<(&str, &str)> {
     
     let re = Regex::new(r".+?•.+?•\s\*\*([^•]+?)\*\*\s•(.*)").unwrap();
 
-    match re.captures(&line) {
+    match re.captures(line) {
         Some(matches) => {
             let (_, [card, series]) = matches.extract(); 
             Some((series.trim(), card.trim()))
@@ -41,10 +43,36 @@ pub fn parse_card_from_drop(line: &str) -> Option<(&str, &str)> {
     }
 }
 
+pub fn parse_card_from_series_lookup(line: &str) -> Option<(bool, &str)> {
+    
+    let re = Regex::new(r".+?•.+?•\s([^•]+?)\s•.+?•.+?•\s\*\*([^•]+?)\*\*").unwrap();
+
+    match re.captures(line) {
+        Some(matches) => {
+            let (_, [has_card_emoji, card]) = matches.extract(); 
+            Some((has_card_emoji.trim() == HAS_CARD_EMOJI, card.trim()))
+        },
+        None => None
+    }
+}
+
+pub fn parse_series_from_embed_description(description: &str) -> Option<&str> {
+    
+    let re = Regex::new(r"Name:\s\*\*(.+?)\*\*").unwrap();
+
+    match re.captures(description) {
+        Some(matches) => {
+            let (_, [series]) = matches.extract(); 
+            Some(series.trim())
+        },
+        None => None
+    }
+}
+
 pub fn parse_series_cards(line: &str) -> Option<(&str, Vec<&str>)> {
     let re = Regex::new(r"\s*(.+)\s*\|\|\s*(.+)").unwrap();
 
-    re.captures(&line)
+    re.captures(line)
       .map(|capt| {
         let (_, [series, cards]) = capt.extract();
         let card_names:Vec<&str> = cards.split(",")
@@ -53,4 +81,16 @@ pub fn parse_series_cards(line: &str) -> Option<(&str, Vec<&str>)> {
 
         (series.trim(), card_names)
       })
+}
+
+pub fn parse_series_from_give_command(description: &str) -> Option<(&str, &str)> {
+    let re = Regex::new(r"Name: \*\*(.+)\*\*\nSeries: \*\*(.+)\*\*.*").unwrap();
+
+    match re.captures(description) {
+        Some(matches) => {
+            let (_, [card, series]) = matches.extract(); 
+            Some((series.trim(), card.trim()))
+        },
+        None => None
+    }
 }

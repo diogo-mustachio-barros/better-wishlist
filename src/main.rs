@@ -2,6 +2,7 @@ mod bot;
 mod util;
 mod components;
 mod commands;
+mod integrations;
 
 use std::sync::Arc;
 use bot::start_bot;
@@ -22,8 +23,8 @@ async fn main() {
     };
 
     
-    logger.log_info("Connecting to database");
     // Init db connection
+    logger.log_info("Connecting to database");
     let Ok(db_connection) = init_db(logger.clone(), mongodb_url).await 
     else {
         logger.log_error("Unable to connect to database");
@@ -31,8 +32,8 @@ async fn main() {
     };
     logger.log_info("Connected to database");
     
-    logger.log_info("Initializing Discord bot");
     // Init discord bot api 
+    logger.log_info("Initializing Discord bot");
     let mut discord_client = start_bot(discord_token, db_connection, logger.clone()).await;
     logger.log_info("Discord bot initialized");
 

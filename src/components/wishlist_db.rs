@@ -28,7 +28,7 @@ pub async fn init_db<T>(logger: Arc<T>, uri: impl AsRef<str>) -> Result<Wishlist
 impl <T> WishlistDB<T> 
     where T: Logger 
 {
-    pub async fn get_wishlisted_users(&self, series:&str, card_name:&str) -> Result<Vec<String>, Error> {
+    pub async fn get_users_with_series_card(&self, series:&str, card_name:&str) -> Result<Vec<String>, Error> {
         let collection = get_wishlist_collection(&self.db_client);
 
         let series_search = series_to_search_term(series);
@@ -53,6 +53,55 @@ impl <T> WishlistDB<T>
                   .unwrap_or_else(|_| vec![])
                   .iter()
                   .map(|doc| doc.get_str("id").unwrap_or("").to_string())
+                  .collect();
+
+        return Ok(ret);
+    }
+
+    pub async fn get_users_with_series(&self, series:&str) -> Result<Vec<(String, i32)>, Error> {
+        let collection = get_wishlist_collection(&self.db_client);
+
+        let series_search = series_to_search_term(series);
+
+        let res =
+            collection.aggregate(
+                [
+                    doc!{ "$match": { "series.search": &series_search }},
+                    doc!{ "$project": { 
+                        "id": 1, 
+                        "series":
+                            { "$filter": 
+                                { "input":"$series",
+                                "as": "serie",
+                                "cond": 
+                                    { "$eq": ["$$serie.search", series_search] }
+                                }
+                            }}},
+                    doc! { "$project": {
+                        "id": 1,
+                        "count": { "$size": { "$arrayElemAt": ["$series.cards", 0] } }
+                      }}
+                ],
+                None
+            ).await;
+
+        if let Err(err) = res {
+            self.logger.log_error(err.to_string());
+            return Err(err);
+        }
+
+        let cursor = res.unwrap();
+
+        let ret = 
+            cursor.try_collect().await
+                  .unwrap_or_else(|_| vec![])
+                  .iter()
+                  .map(|doc| {
+                        let user_id = doc.get_str("id").unwrap_or("").to_string();
+                        let card_count = doc.get_i32("count").unwrap_or(0);
+
+                        (user_id, card_count)
+                    })
                   .collect();
 
         return Ok(ret);

@@ -11,15 +11,15 @@ use crate::components::logger::StdoutLogger;
 use crate::commands::*;
 use crate::integrations::*;
 use crate::util::either::Either;
-use crate::util::parse_util::parse_card_from_drop;
+use crate::util::parse_util::{parse_series_card_from_analysis, parse_series_from_analysis};
 use crate::wishlist_db::WishlistDB;
 use crate::components::logger::Logger;
 
-pub const _SOFI_USER_ID : UserId = UserId::new(853629533855809596);
-pub const _SOFU_USER_ID : UserId = UserId::new(950166445034188820);
-pub const _NORI_USER_ID : UserId = UserId::new(742070928111960155);
-pub const _ME_USER_ID   : UserId = UserId::new(234822770385485824);
-pub const _BOT_USER_ID  : UserId = UserId::new(1219361361348530298);
+pub const _SOFI_USER_ID: UserId = UserId::new(853629533855809596);
+pub const _SOFU_USER_ID: UserId = UserId::new(950166445034188820);
+pub const _NORI_USER_ID: UserId = UserId::new(742070928111960155);
+pub const _ME_USER_ID  : UserId = UserId::new(234822770385485824);
+pub const _BOT_USER_ID : UserId = UserId::new(1219361361348530298);
 
 pub struct Data {
     pub wishlist_db: WishlistDB<StdoutLogger>,
@@ -152,7 +152,11 @@ async fn handle(
 ) -> Result<(), Error> {
     match msg.author.id {
         _NORI_USER_ID => {
-            wishlist_check(ctx, msg, data).await?;
+            if msg.mentions_user_id(_SOFI_USER_ID) {
+                wishlist_check_series(ctx, msg, data).await?;
+            } else {
+                wishlist_check_cards(ctx, msg, data).await?;
+            }
         }
         _ => ()
     }
@@ -177,22 +181,75 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
     }
 }
 
-async fn wishlist_check(ctx: &serenity::Context, msg: &Message, data: &Data) -> Result<(), Error> {
-    // We assume SOFU/NORI only sends messages about drops
-    //   this might change in the future so be mindful
-    //   it may become a TODO here
+async fn wishlist_check_series(
+    ctx: &serenity::Context, 
+    msg: &Message, 
+    data: &Data
+) -> Result<(), Error> {
+    let mut message = MessageBuilder::new();
+    message.push("A series from your wishlist is up for grabs!\n");
 
+    let mut send_message = false;
+    for line in msg.content.lines() {
+        if let Some(series) = parse_series_from_analysis(line) {
+            let wishlisted_res = 
+                data.wishlist_db.get_users_with_series(series).await;
+
+            if let Err(why) = wishlisted_res {
+                data.logger.log_error(format!("wishlist_check_series: Error retrieving wishlisted users for '{series}' : {why:?}"));
+                continue;
+            } 
+
+            let wishlisted = wishlisted_res.unwrap();
+
+            if wishlisted.len() > 0 
+            {
+                send_message = true;
+
+                message.push(format!("{series}: \n"));
+
+                for (user, amount) in wishlisted {
+                    let user_id = user.parse::<u64>().unwrap();
+                    message
+                        .push("\t")
+                        .mention(&UserId::new(user_id).mention())
+                        .push(format!("({amount})\n"));
+                    
+                    data.logger.log_info(format!("wishlist_check_series: Pinging user `{user_id}` for series `{series}`"));
+                }
+            }
+        }
+    }
+
+    if send_message {
+        // Build reply to original message 
+        let builder = CreateMessage::new().content(message.build()).reference_message(MessageReference::from(msg));
+        if let Err(why) = msg.channel_id.send_message(ctx, builder).await {
+            data.logger.log_error(format!("Error sending message: {why:?}"));
+            return Err(Box::new(why));
+        }
+    }
+
+    Ok(())
+}
+
+
+async fn wishlist_check_cards(
+    ctx: &serenity::Context, 
+    msg: &Message, 
+    data: &Data
+) -> Result<(), Error> {
     let mut message = MessageBuilder::new();
     message.push("A card from your wishlist is dropping!\n");
 
     let mut wishlist_pings: Vec<(&str, &str, Vec<String>)> = vec![];
     for line in msg.content.lines() {
-        if let Some((series, card)) = parse_card_from_drop(line) {
+        if let Some((series, card)) = parse_series_card_from_analysis(line) {
             let wishlisted_res = 
-                data.wishlist_db.get_wishlisted_users(series, card).await;
+                data.wishlist_db.get_users_with_series_card(series, card).await;
 
             if let Err(why) = wishlisted_res {
-                data.logger.log_error(format!("Error retrieving wishlisted users for '{card}•{series}' : {why:?}"));
+                data.logger.log_error(format!("wishlist_check_cards: Error retrieving wishlisted users for '{card}•{series}' : {why:?}"));
                 continue;
             } 
 
@@ -206,7 +263,7 @@ async fn wishlist_check(ctx: &serenity::Context, msg: &Message, data: &Data) -> 
                 for user in wishlisted {
                     let user_id = user.parse::<u64>().unwrap();
                     message.mention(&UserId::new(user_id).mention());
-                    data.logger.log_info(format!("Pinging user `{user_id}` for card `{card}`"));
+                    data.logger.log_info(format!("wishlist_check_cards: Pinging user `{user_id}` for card `{card}`"));
                 }
 
                 message.push("\n");
@@ -222,15 +279,20 @@ async fn wishlist_check(ctx: &serenity::Context, msg: &Message, data: &Data) -> 
     let builder = CreateMessage::new().content(message.build()).reference_message(MessageReference::from(msg));
 
     // Try to send response
-    match msg.channel_id.send_message(ctx.http(), builder).await {
+    match msg.channel_id.send_message(ctx, builder).await {
         Err(why) => {
             data.logger.log_error(format!("Error sending message: {why:?}"));
             return Err(Box::new(why));
         }
         Ok(reply_msg) => {
-            if wishlist_pings.len() > 0 { reply_msg.react(ctx, ReactionType::Unicode("1️⃣".to_string())).await?; }
-            if wishlist_pings.len() > 1 { reply_msg.react(ctx, ReactionType::Unicode("2️⃣".to_string())).await?; }
-            if wishlist_pings.len() > 2 { reply_msg.react(ctx, ReactionType::Unicode("3️⃣".to_string())).await?; }
+
+            let reaction_one  : ReactionType = ReactionType::Unicode("1️⃣".to_string());
+            let reaction_two  : ReactionType = ReactionType::Unicode("2️⃣".to_string());
+            let reaction_three: ReactionType = ReactionType::Unicode("3️⃣".to_string());
+
+            if wishlist_pings.len() > 0 { reply_msg.react(ctx, reaction_one.clone()).await?; }
+            if wishlist_pings.len() > 1 { reply_msg.react(ctx, reaction_two.clone()).await?; }
+            if wishlist_pings.len() > 2 { reply_msg.react(ctx, reaction_three.clone()).await?; }
 
             while let Some(reaction) = ReactionCollector::new(ctx)
                 // only reactions to our reply
@@ -275,6 +337,10 @@ async fn wishlist_check(ctx: &serenity::Context, msg: &Message, data: &Data) -> 
                     None => {}
                 }
             }
+
+            reply_msg.delete_reaction_emoji(ctx, reaction_one).await?;
+            reply_msg.delete_reaction_emoji(ctx, reaction_two).await?;
+            reply_msg.delete_reaction_emoji(ctx, reaction_three).await?;
 
             return Ok(());
         }

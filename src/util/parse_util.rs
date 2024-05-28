@@ -30,7 +30,7 @@ pub fn parse_secrets() -> Option<(String, String)> {
     None
 }
 
-pub fn parse_card_from_drop(line: &str) -> Option<(&str, &str)> {
+pub fn parse_series_card_from_analysis(line: &str) -> Option<(&str, &str)> {
     
     let re = Regex::new(r".+?•.+?•\s\*\*([^•]+?)\*\*\s•(.*)").unwrap();
 
@@ -38,6 +38,19 @@ pub fn parse_card_from_drop(line: &str) -> Option<(&str, &str)> {
         Some(matches) => {
             let (_, [card, series]) = matches.extract(); 
             Some((series.trim(), card.trim()))
+        },
+        None => None
+    }
+}
+
+pub fn parse_series_from_analysis(line: &str) -> Option<&str> {
+    
+    let re = Regex::new(r".+?•.+?•(.*)").unwrap();
+
+    match re.captures(line) {
+        Some(matches) => {
+            let (_, [series]) = matches.extract(); 
+            Some(series.trim())
         },
         None => None
     }

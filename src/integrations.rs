@@ -55,10 +55,6 @@ pub async fn integration_ssl (
             }
         };
 
-        if !is_series_lookup(&sofi_msg) {
-            return Ok(());
-        }
-
         sofi_msg.react(ctx.http(), ReactionType::Unicode("✅".to_string())).await.unwrap();
         sofi_msg.react(ctx.http(), ReactionType::Unicode("❌".to_string())).await.unwrap();
 
@@ -74,6 +70,10 @@ pub async fn integration_ssl (
             .timeout(std::time::Duration::from_secs(60))
             .await
         {
+            if !is_series_lookup(&sofi_msg) {
+                continue;
+            }
+
             let embed = sofi_msg.embeds.get(0).unwrap();
             let description = embed.description.clone().unwrap();
             let series = parse_series_from_embed_description(description.as_str()).unwrap();

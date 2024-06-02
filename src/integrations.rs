@@ -55,8 +55,8 @@ pub async fn integration_ssl (
             }
         };
 
-        sofi_msg.react(ctx.http(), ReactionType::Unicode("✅".to_string())).await.unwrap();
-        sofi_msg.react(ctx.http(), ReactionType::Unicode("❌".to_string())).await.unwrap();
+        sofi_msg.react(ctx.http(), ReactionType::Unicode("✅".to_string())).await?;
+        sofi_msg.react(ctx.http(), ReactionType::Unicode("❌".to_string())).await?;
 
         let mut wa_response_msg: Option<(Message, i32)> = None;
         let mut wr_response_msg: Option<(Message, i32)> = None;
@@ -67,13 +67,22 @@ pub async fn integration_ssl (
             // only reactions to SOFI's reply
             .message_id(sofi_msg.id)
             // Timeout when there's no reaction for 60 seconds
-            .timeout(std::time::Duration::from_secs(60))
+            .timeout(std::time::Duration::from_secs(10))
             .await
         {
+            // get most recent SOFI message (may have been edited since the first reply)
+            let sofi_msg = match ctx.http().get_message(first_reply.channel_id, first_reply.id).await {
+                Ok(msg) => msg,
+                Err(err) => {
+                    ctx.data().logger.log_error(format!("integration_ssl: unable to retrieve SOFI's reply to {}:\n{err:?}", ctx.author()));
+                    return Err(Box::new(err));
+                }
+            };
+
             if !is_series_lookup(&sofi_msg) {
                 continue;
             }
-
+            
             let embed = sofi_msg.embeds.get(0).unwrap();
             let description = embed.description.clone().unwrap();
             let series = parse_series_from_embed_description(description.as_str()).unwrap();
@@ -122,6 +131,9 @@ pub async fn integration_ssl (
                 _ => ()
             }
         }
+
+        sofi_msg.delete_reaction_emoji(ctx, ReactionType::Unicode("✅".to_string())).await?;
+        sofi_msg.delete_reaction_emoji(ctx, ReactionType::Unicode("❌".to_string())).await?;
     }
 
     Ok(())
@@ -130,7 +142,7 @@ pub async fn integration_ssl (
 fn is_series_lookup(message: &Message) -> bool {
     message.embeds.get(0).is_some_and(|embed| 
         embed.title.clone().is_some_and(|title| title == "SOFI: SERIES LOOKUP") 
-        && embed.fields.len() > 0
+        // && embed.fields.len() > 0
     )
 }
 

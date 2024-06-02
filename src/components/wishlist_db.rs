@@ -160,7 +160,7 @@ impl <T> WishlistDB<T>
         }
     }
 
-    pub async fn remove_all_from_wishlist(&self, user_id:&str, series:&str, card_names:Vec<&str>) -> Result<i32, Error> {
+    pub async fn remove_all_from_wishlist(&self, user_id:&str, series:&str, card_names:Vec<&str>) -> Result<(i32, i32), Error> {
         let collection = get_wishlist_collection(&self.db_client);
         
         let initial_amount = self.get_user_wishlisted_cards_count(user_id, series).await;
@@ -186,7 +186,7 @@ impl <T> WishlistDB<T>
                     self.remove_series_from_wishlist(user_id, series).await?;
                 }
 
-                Ok(initial_amount - curr_amount)
+                Ok((initial_amount - curr_amount, curr_amount))
             },
             Err(err) => Err(err)
         }

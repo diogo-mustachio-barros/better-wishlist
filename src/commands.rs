@@ -138,10 +138,10 @@ pub async fn wr_cards(
         data.wishlist_db.remove_all_from_wishlist(&user_id.to_string(), series, card_names).await; 
 
     match res {
-        Ok(amount) => {
+        Ok((amount_removed, amount_left)) => {
             match prev_response {
                 Some((mut prev_msg, prev_removed_count)) => {
-                    let total = prev_removed_count + amount;
+                    let total = prev_removed_count + amount_removed;
 
                     message.push(format!("Removed {total} card(s) from your wishlist!"));
                     prev_msg.edit(ctx, EditMessage::new().content(message.build())).await.unwrap();
@@ -149,7 +149,12 @@ pub async fn wr_cards(
                     return Ok((prev_msg, total));
                 },
                 None => {
-                    message.push(format!("Removed {amount} card(s) from your wishlist!"));
+                    if amount_left > 0 {
+                        message.push(format!("Removed {amount_removed} card(s) from your wishlist! ({amount_left} card(s) left)"));
+                    } else {
+                        message.push(format!("Removed {amount_removed} card(s) from your wishlist! No more cards left!"));
+                    }
+
                     let response = match user_msg {
                         Either::Left(msg) => msg.reply_ping(ctx, message.build()).await.unwrap(),
                         Either::Right(channel_id) => {
@@ -159,7 +164,7 @@ pub async fn wr_cards(
                         }
                     };
 
-                    return Ok((response, amount));
+                    return Ok((response, amount_removed));
                 }
             }
         },

@@ -67,7 +67,7 @@ pub async fn integration_ssl (
             // only reactions to SOFI's reply
             .message_id(sofi_msg.id)
             // Timeout when there's no reaction for 60 seconds
-            .timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(90))
             .await
         {
             // get most recent SOFI message (may have been edited since the first reply)
@@ -201,7 +201,7 @@ pub async fn integration_sg (
                 // only reactions to SOFI's reply
                 .message_id(sofi_msg.id)
                 // Timeout when there's no reaction for 60 seconds
-                .timeout(std::time::Duration::from_secs(60))
+                .timeout(std::time::Duration::from_secs(120))
                 .await
             {
                 match &reaction.emoji {

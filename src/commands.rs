@@ -2,7 +2,7 @@ use poise::serenity_prelude as serenity;
 use poise::samples::HelpConfiguration;
 use poise::CreateReply;
 use rand::Rng;
-use ::serenity::all::{ChannelId, ComponentInteractionCollector, CreateMessage, EditMessage, UserId};
+use ::serenity::all::{ChannelId, ComponentInteractionCollector, CreateEmbedFooter, CreateMessage, EditMessage, UserId};
 use serenity::all::MessageBuilder;
 use serenity::all::{Message, User};
 
@@ -357,7 +357,11 @@ pub async fn paginate (
         };
 
         CreateReply::default()
-            .embed(serenity::CreateEmbed::default().description(pages.get(0).unwrap_or(&"Nothing to show".to_string())))
+            .embed(
+                serenity::CreateEmbed::default()
+                    .description(pages.get(0).unwrap_or(&"Nothing to show".to_string()))
+                    .footer(CreateEmbedFooter::new(format!("Page 1/{}", pages.len())))
+                )
             .components(components)
     };
 
@@ -398,7 +402,11 @@ pub async fn paginate (
                 ctx.serenity_context(),
                 serenity::CreateInteractionResponse::UpdateMessage(
                     serenity::CreateInteractionResponseMessage::new()
-                        .embed(serenity::CreateEmbed::new().description(pages.get(current_page).unwrap())),
+                        .embed(
+                            serenity::CreateEmbed::new()
+                                .description(pages.get(current_page).unwrap())
+                                .footer(CreateEmbedFooter::new(format!("Page {}/{}", current_page + 1, pages.len())))
+                            ),
                 ),
             )
             .await?;

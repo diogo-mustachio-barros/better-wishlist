@@ -239,40 +239,39 @@ async fn wishlist_check_cards(
     msg: &Message, 
     data: &Data
 ) -> Result<(), Error> {
+    let targets = msg.content.lines()
+        .map(|line| parse_series_card_from_analysis(line).unwrap_or(("", "")))
+        .collect();
+
+    let wishlist_pings_res = 
+        data.wishlist_db.get_users_with_series_card(targets).await;
+
+    if let Err(why) = wishlist_pings_res {
+        data.logger.log_error(format!("wishlist_check_cards: Error retrieving wishlisted users: {why:?}"));
+        return Err(Box::new(why));
+    }
+
+    let mut wishlist_pings = wishlist_pings_res.unwrap();
+
+    if wishlist_pings.is_empty() {
+        // No pings, no message, everything ok
+        return Ok(());
+    }
+
     let mut message = MessageBuilder::new();
     message.push("A card from your wishlist is dropping!\n");
 
-    let mut wishlist_pings: Vec<(&str, &str, Vec<String>)> = vec![];
-    for line in msg.content.lines() {
-        if let Some((series, card)) = parse_series_card_from_analysis(line) {
-            let wishlisted_res = 
-                data.wishlist_db.get_users_with_series_card(series, card).await;
+    for ((_, card), users) in wishlist_pings.iter()
+    {
+        message.push(format!("{card}: "));
 
-            if let Err(why) = wishlisted_res {
-                data.logger.log_error(format!("wishlist_check_cards: Error retrieving wishlisted users for '{card}•{series}' : {why:?}"));
-                continue;
-            } 
-
-            let wishlisted = wishlisted_res.unwrap();
-
-            if wishlisted.len() > 0 
-            {
-                wishlist_pings.push((series, card, wishlisted.clone()));
-                message.push(format!("{}: ", card));
-
-                for user in wishlisted {
-                    let user_id = user.parse::<u64>().unwrap();
-                    message.mention(&UserId::new(user_id).mention());
-                    data.logger.log_info(format!("wishlist_check_cards: Pinging user `{user_id}` for card `{card}`"));
-                }
-
-                message.push("\n");
-            }
+        for user in users {
+            let user_id = user.parse::<u64>().unwrap();
+            message.mention(&UserId::new(user_id).mention());
+            data.logger.log_info(format!("wishlist_check_cards: Pinging user `{user_id}` for card `{card}`"));
         }
-    }
 
-    if wishlist_pings.is_empty() {
-        return Ok(());
+        message.push("\n");
     }
 
     // Build reply to original message 
@@ -319,17 +318,17 @@ async fn wishlist_check_cards(
 
                 match opt_ping {
                     Some(ping) => {
-                        if ping.2.contains(&reaction_user_id.to_string()) {
+                        if ping.1.contains(&reaction_user_id.to_string()) {
                             // remove user that reacted from wishlist_pings internal list if the user is in there
-                            ping.2.retain(|user| *user != reaction_user_id.to_string());
+                            ping.1.retain(|user| *user != reaction_user_id.to_string());
         
-                            // if it was there, activate wr for him
+                            // activate wr for the user
                             wr_cards( ctx, 
                                 Either::Right(reaction.channel_id), 
                                 data, 
                                 reaction_user_id, 
-                                ping.0, 
-                                vec![ping.1],
+                                ping.0.0, 
+                                vec![ping.0.1],
                                 None
                             ).await.unwrap();
                         }

@@ -28,18 +28,26 @@ pub async fn init_db<T>(logger: Arc<T>, uri: impl AsRef<str>) -> Result<Wishlist
 impl <T> WishlistDB<T> 
     where T: Logger 
 {
-    pub async fn get_users_with_series_card(&self, series:&str, card_name:&str) -> Result<Vec<String>, Error> {
+    pub async fn get_users_with_series_card<'a>(&'a self, cards: Vec<(&'a str, &'a str)>) -> Result<Vec<((&str, &str), Vec<String>)>, Error> {
         let collection = get_wishlist_collection(&self.db_client);
 
-        let series_search = series_to_search_term(series);
-        let card_search = card_to_search_term(card_name);
+        let mut facet = doc! {};
+        let mut n = 0;
+        for (series, card_name) in cards.iter() {
+            let series_search = series_to_search_term(series);
+            let card_search = card_to_search_term(card_name);
+
+            facet.insert(format!("drop_{n}"), 
+                vec![
+                    doc!{ "$match": {"series": {"$elemMatch": {"search": series_search, "cards.search": card_search}}}},
+                    doc!{ "$project": { "id": 1}}
+                ]
+            );
+            n += 1;
+        }
 
         let res =
-            collection.find(
-                doc!{ "series": { "$elemMatch": {"search": series_search, "cards.search": card_search}}},
-                // Some(FindOptions::builder().projection(doc! {"id": 1}).build() )
-                None
-            ).await;
+            collection.aggregate([doc! {"$facet": facet}], None).await;
 
         if let Err(err) = res {
             self.logger.log_error(err.to_string());
@@ -48,12 +56,25 @@ impl <T> WishlistDB<T>
 
         let cursor = res.unwrap();
 
-        let ret = 
+        let ret: Vec<((&str, &str), Vec<String>)> = 
             cursor.try_collect().await
                   .unwrap_or_else(|_| vec![])
-                  .iter()
-                  .map(|doc| doc.get_str("id").unwrap_or("").to_string())
-                  .collect();
+                  .first()
+                  .map(move |x1| {
+                    x1.iter().map(|(drop_i, users_doc)|{
+                        let index: usize = drop_i[5..].parse().unwrap();
+                        let users: Vec<String> = 
+                            users_doc.as_array()
+                                     .unwrap()
+                                     .iter()
+                                     .map(|user_doc| user_doc.as_document().unwrap().get_str("id").unwrap().to_string())
+                                     .collect();
+
+                        (cards.get(index).map(Clone::clone).unwrap(), users)
+                    })
+                    .filter(|(_, users)| !users.is_empty())
+                    .collect()
+                  }).unwrap();
 
         return Ok(ret);
     }

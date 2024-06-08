@@ -1,3 +1,5 @@
+use std::cmp::min;
+
 use poise::serenity_prelude as serenity;
 use poise::samples::HelpConfiguration;
 use poise::CreateReply;
@@ -360,7 +362,7 @@ pub async fn paginate (
             .embed(
                 serenity::CreateEmbed::default()
                     .description(pages.get(0).unwrap_or(&"Nothing to show".to_string()))
-                    .footer(CreateEmbedFooter::new(format!("Page 1/{}", pages.len())))
+                    .footer(CreateEmbedFooter::new(format!("Page {}/{}", min(pages.len(), 1), pages.len())))
                 )
             .components(components)
     };

@@ -11,7 +11,7 @@ use crate::components::logger::StdoutLogger;
 use crate::commands::*;
 use crate::integrations::*;
 use crate::util::either::Either;
-use crate::util::parse_util::{parse_series_card_from_analysis, parse_series_from_analysis};
+use crate::util::parse_util::{is_series_analysis, parse_series_card_from_analysis, parse_series_from_analysis};
 use crate::wishlist_db::WishlistDB;
 use crate::components::logger::Logger;
 
@@ -151,8 +151,8 @@ async fn handle(
     msg:&Message 
 ) -> Result<(), Error> {
     match msg.author.id {
-        _NORI_USER_ID => {
-            if msg.mentions_user_id(_SOFI_USER_ID) {
+        _NORI_USER_ID | _ME_USER_ID => {
+            if is_series_analysis(&msg.content) {
                 wishlist_check_series(ctx, msg, data).await?;
             } else {
                 wishlist_check_cards(ctx, msg, data).await?;
@@ -190,6 +190,7 @@ async fn wishlist_check_series(
     message.push("A series from your wishlist is up for grabs!\n");
 
     let mut send_message = false;
+    data.logger.log_debug(msg.content.clone());
     for line in msg.content.lines() {
         if let Some(series) = parse_series_from_analysis(line) {
             let wishlisted_res = 
@@ -345,3 +346,30 @@ async fn wishlist_check_cards(
         }
     }
 }
+
+
+// async fn mentions_user_message(
+//     ctx: &serenity::Context, 
+//     msg: &Message, 
+//     author_id: UserId
+// ) -> bool 
+// {
+//     let Some(ref reference) = msg.message_reference
+//     else {
+//         return false;
+//     };
+
+//     let Some(message_id) = reference.message_id 
+//     else {
+//         return false;
+//     };
+
+//     let channel_id = reference.channel_id;
+
+//     let Ok(message) = ctx.http().get_message(channel_id, message_id).await
+//     else {
+//         return false;
+//     };
+
+//     return message.author.id == author_id;
+// }

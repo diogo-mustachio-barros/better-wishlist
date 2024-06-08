@@ -2,14 +2,12 @@ use std::env;
 
 use regex::Regex;
 
-
-
 const DISCORD_TOKEN_KEY : &str = "DISCORD_TOKEN";
 const MONGODB_URL_KEY   : &str = "MONGODB_URL";
 
-
 const HAS_CARD_EMOJI : &str = "☑️";
 
+const SERIES_ANALYSIS_REGEX : &str = r"^[^•]+?•[^•]+?•\s+([^ɢ`•*]+)";
 
 pub fn parse_secrets() -> Option<(String, String)> {
     // Main args have priority
@@ -45,7 +43,7 @@ pub fn parse_series_card_from_analysis(line: &str) -> Option<(&str, &str)> {
 
 pub fn parse_series_from_analysis(line: &str) -> Option<&str> {
     
-    let re = Regex::new(r".+?•.+?•(.*)").unwrap();
+    let re = Regex::new(SERIES_ANALYSIS_REGEX).unwrap();
 
     match re.captures(line) {
         Some(matches) => {
@@ -54,6 +52,12 @@ pub fn parse_series_from_analysis(line: &str) -> Option<&str> {
         },
         None => None
     }
+}
+
+pub fn is_series_analysis(line: &str) -> bool {
+    let re = Regex::new(SERIES_ANALYSIS_REGEX).unwrap();
+
+    re.is_match(line)
 }
 
 pub fn parse_card_from_series_lookup(line: &str) -> Option<(bool, &str)> {

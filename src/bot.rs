@@ -151,7 +151,7 @@ async fn handle(
     msg:&Message 
 ) -> Result<(), Error> {
     match msg.author.id {
-        _NORI_USER_ID | _ME_USER_ID => {
+        _NORI_USER_ID => {
             if is_series_analysis(&msg.content) {
                 wishlist_check_series(ctx, msg, data).await?;
             } else {
@@ -185,44 +185,42 @@ async fn wishlist_check_series(
     ctx: &serenity::Context, 
     msg: &Message, 
     data: &Data
-) -> Result<(), Error> {
-    let mut message = MessageBuilder::new();
-    message.push("A series from your wishlist is up for grabs!\n");
+) -> Result<(), Error> 
+{
+    let targets = msg.content.lines()
+        .map(|line| parse_series_from_analysis(line).unwrap_or(""))
+        .collect();
 
-    let mut send_message = false;
-    data.logger.log_debug(msg.content.clone());
-    for line in msg.content.lines() {
-        if let Some(series) = parse_series_from_analysis(line) {
-            let wishlisted_res = 
-                data.wishlist_db.get_users_with_series(series).await;
+    let wishlisted_res = 
+        data.wishlist_db.get_users_with_series(&targets).await;
 
-            if let Err(why) = wishlisted_res {
-                data.logger.log_error(format!("wishlist_check_series: Error retrieving wishlisted users for '{series}' : {why:?}"));
-                continue;
-            } 
 
-            let wishlisted = wishlisted_res.unwrap();
-
-            if wishlisted.len() > 0 
-            {
-                send_message = true;
-
-                message.push(format!("{series}: \n"));
-
-                for (user, amount) in wishlisted {
-                    let user_id = user.parse::<u64>().unwrap();
-                    message
-                        .push("\t")
-                        .mention(&UserId::new(user_id).mention())
-                        .push(format!("({amount})\n"));
-                    
-                    data.logger.log_info(format!("wishlist_check_series: Pinging user `{user_id}` for series `{series}`"));
-                }
-            }
-        }
+    if let Err(why) = wishlisted_res {
+        data.logger.log_error(format!("wishlist_check_series: Error retrieving wishlisted users for '{:?}' : {why:?}", targets));
+        return Err(Box::new(why));
     }
 
-    if send_message {
+    let wishlist_pings = wishlisted_res.unwrap();
+
+    if wishlist_pings.len() > 0 
+    {
+        let mut message = MessageBuilder::new();
+        message.push("@@@ A series from your wishlist is up for grabs!\n");
+
+        for (series, users) in wishlist_pings {
+            message.push(format!("{series}: \n"));
+    
+            for (user, amount) in users {
+                let user_id = user.parse::<u64>().unwrap();
+                message
+                    .push("\t")
+                    .mention(&UserId::new(user_id).mention())
+                    .push(format!("({amount})\n"));
+                
+                data.logger.log_info(format!("wishlist_check_series: Pinging user `{user_id}` for series `{series}`"));
+            }
+        }
+
         // Build reply to original message 
         let builder = CreateMessage::new().content(message.build()).reference_message(MessageReference::from(msg));
         if let Err(why) = msg.channel_id.send_message(ctx, builder).await {

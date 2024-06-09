@@ -79,14 +79,17 @@ impl <T> WishlistDB<T>
         return Ok(ret);
     }
 
-    pub async fn get_users_with_series(&self, series:&str) -> Result<Vec<(String, i32)>, Error> {
+    pub async fn get_users_with_series<'a>(&'a self, series:&Vec<&'a str>) -> Result<Vec<(&str, Vec<(String, i32)>)>, Error> {
         let collection = get_wishlist_collection(&self.db_client);
 
-        let series_search = series_to_search_term(series);
 
-        let res =
-            collection.aggregate(
-                [
+        let mut facet = doc! {};
+        let mut n = 0;
+        for series in series.iter() {
+            let series_search = series_to_search_term(series);
+
+            facet.insert(format!("drop_{n}"), 
+                vec![
                     doc!{ "$match": { "series.search": &series_search }},
                     doc!{ "$project": { 
                         "id": 1, 
@@ -101,10 +104,14 @@ impl <T> WishlistDB<T>
                     doc! { "$project": {
                         "id": 1,
                         "count": { "$size": { "$arrayElemAt": ["$series.cards", 0] } }
-                      }}
-                ],
-                None
-            ).await;
+                    }}
+                ]
+            );
+            n += 1;
+        }
+
+        let res =
+            collection.aggregate([doc! {"$facet": facet}], None).await;
 
         if let Err(err) = res {
             self.logger.log_error(err.to_string());
@@ -116,14 +123,27 @@ impl <T> WishlistDB<T>
         let ret = 
             cursor.try_collect().await
                   .unwrap_or_else(|_| vec![])
-                  .iter()
-                  .map(|doc| {
-                        let user_id = doc.get_str("id").unwrap_or("").to_string();
-                        let card_count = doc.get_i32("count").unwrap_or(0);
+                  .first()
+                  .map(move |x1| {
+                    x1.iter().map(|(drop_i, users_count_doc)|{
+                        let index: usize = drop_i[5..].parse().unwrap();
+                        let users_count: Vec<(String, i32)> = users_count_doc
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|user_bson| {
+                                let user_doc = user_bson.as_document().unwrap();
+                                let user = user_doc.get_str("id").unwrap().to_string();
+                                let count = user_doc.get_i32("count").unwrap_or(0);
+                                (user, count)
+                            })
+                            .collect();
 
-                        (user_id, card_count)
+                        (series.get(index).map(Clone::clone).unwrap(), users_count)
                     })
-                  .collect();
+                    .filter(|(_, users)| !users.is_empty())
+                    .collect()
+                  }).unwrap();
 
         return Ok(ret);
     }

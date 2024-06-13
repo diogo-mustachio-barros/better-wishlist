@@ -3,12 +3,13 @@ mod util;
 mod components;
 mod commands;
 mod integrations;
+mod tests;
 
 use std::sync::Arc;
 use bot::start_bot;
 use components::{logger::StdoutLogger, logger::Logger, wishlist_db::{self, init_db}};
 
-use crate::util::parse_util::parse_secrets;
+use util::parse_util::parse_secrets;
 
 
 #[tokio::main]

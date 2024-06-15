@@ -1,14 +1,25 @@
-# Use the latest version of the Rust base image
-FROM rust:latest
+# From: https://github.com/LukeMathWalker/cargo-chef
 
-# Set the working directory in the container to /my
-WORKDIR /usr/src/my-app
+FROM rust:1 AS chef 
+# We only pay the installation cost once, 
+# it will be cached from the second build onwards
+RUN cargo install cargo-chef 
+WORKDIR app
 
-# Copy the Rust project files to the working directory
+FROM chef AS planner
 COPY . .
+RUN cargo chef prepare  --recipe-path recipe.json
 
-# Build the Rust app
-RUN cargo build
+FROM chef AS builder
+COPY --from=planner /app/recipe.json recipe.json
+# Build dependencies - this is the caching Docker layer!
+RUN cargo chef cook --release --recipe-path recipe.json
+# Build application
+COPY . .
+RUN cargo build --release --bin betterwishlist
 
-# Set the command to run the Rust app
-CMD cargo run
+# We do not need the Rust toolchain to run the binary!
+FROM debian:bookworm-slim AS runtime
+WORKDIR app
+COPY --from=builder /app/target/release/betterwishlist /usr/local/bin
+ENTRYPOINT ["/usr/local/bin/betterwishlist"]

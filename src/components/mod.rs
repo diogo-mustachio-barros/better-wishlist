@@ -1,2 +1,2 @@
 pub mod logger;
-pub mod wishlist_db;
+pub mod mongo_wishlist_db;

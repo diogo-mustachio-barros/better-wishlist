@@ -1,5 +1,6 @@
 mod bot;
 mod util;
+mod traits;
 mod components;
 mod commands;
 mod integrations;
@@ -7,7 +8,7 @@ mod tests;
 
 use std::sync::Arc;
 use bot::start_bot;
-use components::{logger::StdoutLogger, logger::Logger, wishlist_db::{self, init_db}};
+use components::{logger::StdoutLogger, logger::Logger, mongo_wishlist_db::init_db};
 
 use util::parse_util::parse_secrets;
 

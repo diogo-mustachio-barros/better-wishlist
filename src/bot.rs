@@ -10,9 +10,9 @@ use serenity::prelude::*;
 use crate::components::logger::StdoutLogger;
 use crate::commands::*;
 use crate::integrations::*;
+use crate::traits::wishlist_db::WishlistDB;
 use crate::util::either::Either;
 use crate::util::parse_util::{is_series_analysis, parse_series_card_from_analysis, parse_series_from_analysis};
-use crate::wishlist_db::WishlistDB;
 use crate::components::logger::Logger;
 
 pub const _SOFI_USER_ID: UserId = UserId::new(853629533855809596);
@@ -22,13 +22,17 @@ pub const _ME_USER_ID  : UserId = UserId::new(234822770385485824);
 pub const _BOT_USER_ID : UserId = UserId::new(1219361361348530298);
 
 pub struct Data {
-    pub wishlist_db: WishlistDB<StdoutLogger>,
+    pub wishlist_db: Box<dyn WishlistDB>,
     pub logger: Arc<StdoutLogger>
 }
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Context<'a> = poise::Context<'a, Data, Error>;
 
-pub async fn start_bot(token:impl AsRef<str>, wishlist_db: WishlistDB<StdoutLogger>, logger: Arc<StdoutLogger>) -> serenity::Client
+pub async fn start_bot (
+    token:impl AsRef<str>, 
+    wishlist_db: impl WishlistDB + 'static, 
+    logger: Arc<StdoutLogger>
+) -> serenity::Client
 {
     // Set gateway intents, which decides what events the bot will be notified about
     let intents = GatewayIntents::GUILD_MESSAGES
@@ -69,11 +73,11 @@ pub async fn start_bot(token:impl AsRef<str>, wishlist_db: WishlistDB<StdoutLogg
             },
             ..Default::default()
         })
-        .setup(|ctx, _ready, framework| {
+        .setup(move |ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
                 Ok(Data {
-                    wishlist_db,
+                    wishlist_db: Box::new(wishlist_db),
                     logger
                 })
             })
@@ -197,7 +201,7 @@ async fn wishlist_check_series(
 
     if let Err(why) = wishlisted_res {
         data.logger.log_error(format!("wishlist_check_series: Error retrieving wishlisted users for '{:?}' : {why:?}", targets));
-        return Err(Box::new(why));
+        return Err(why);
     }
 
     let wishlist_pings = wishlisted_res.unwrap();
@@ -233,7 +237,7 @@ async fn wishlist_check_series(
 }
 
 
-async fn wishlist_check_cards(
+async fn wishlist_check_cards (
     ctx: &serenity::Context, 
     msg: &Message, 
     data: &Data
@@ -247,7 +251,7 @@ async fn wishlist_check_cards(
 
     if let Err(why) = wishlist_pings_res {
         data.logger.log_error(format!("wishlist_check_cards: Error retrieving wishlisted users: {why:?}"));
-        return Err(Box::new(why));
+        return Err(why);
     }
 
     let mut wishlist_pings = wishlist_pings_res.unwrap();
@@ -324,7 +328,7 @@ async fn wishlist_check_cards(
                             // activate wr for the user
                             wr_cards( ctx, 
                                 Either::Right(reaction.channel_id), 
-                                data, 
+                                &data, 
                                 reaction_user_id, 
                                 ping.0.0, 
                                 vec![ping.0.1],

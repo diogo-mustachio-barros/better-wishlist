@@ -44,7 +44,7 @@ pub async fn command_wa (
     }
 }
 
-pub async fn wa(
+pub async fn wa (
     ctx: &serenity::Context, 
     msg: &Message, 
     data: &Data, 
@@ -78,7 +78,7 @@ pub async fn wa(
         Err(err) =>  {
             data.logger.log_error(format!(".wa | {}", err.to_string()));
             message.push(format!("Something went wrong adding cards to your wishlist."));
-            return Err(Box::new(err));
+            return Err(err);
         }
     };
 }
@@ -124,7 +124,7 @@ pub async fn command_wr(
     Ok(())
 }
 
-pub async fn wr_cards(
+pub async fn wr_cards (
     ctx: &serenity::Context, 
     user_msg: Either<&Message, ChannelId>, 
     data: &Data, 
@@ -183,12 +183,18 @@ pub async fn wr_cards(
                 }
             };
 
-            return Err(Box::new(err));
+            return Err(err);
         }
     };
 }
 
-pub async fn wr_series(ctx: &serenity::Context, msg: &Message, data: &Data, user_id: UserId, series: &str) {
+pub async fn wr_series(
+    ctx: &serenity::Context, 
+    msg: &Message, 
+    data: &Data, 
+    user_id: UserId, 
+    series: &str
+) {
     let res = 
     data.wishlist_db.remove_series_from_wishlist(&user_id.to_string(), series).await; 
     

@@ -1,18 +1,18 @@
 use std::{sync::Arc, vec};
 
 use mongodb::{self, bson::{doc, Bson, Document}, error::Error, options::{ClientOptions, UpdateOptions}, Client};
-use serenity::futures::TryStreamExt;
+use serenity::{async_trait, futures::TryStreamExt};
 
-use crate::components::logger::Logger;
+use crate::{components::logger::Logger, traits::wishlist_db::WishlistDB};
 
-pub struct WishlistDB<T> 
+pub struct MongoWishlistDB<T> 
     where T: Logger 
 {
     db_client: mongodb::Client,
     logger: Arc<T>
 }
 
-pub async fn init_db<T>(logger: Arc<T>, uri: impl AsRef<str>) -> Result<WishlistDB<T>, Error> 
+pub async fn init_db<T>(logger: Arc<T>, uri: impl AsRef<str>) -> Result<MongoWishlistDB<T>, Error> 
     where T: Logger 
 {
     // Create a new client and connect to the server
@@ -22,13 +22,18 @@ pub async fn init_db<T>(logger: Arc<T>, uri: impl AsRef<str>) -> Result<Wishlist
     // let client = mongodb::Client::with_uri_str(uri).await;
     let client = Client::with_options(client_options);
 
-    return client.map(|db_client| WishlistDB{db_client, logger});
+    return client.map(|db_client| MongoWishlistDB{db_client, logger});
 }
 
-impl <T> WishlistDB<T> 
-    where T: Logger 
+#[async_trait]
+impl <T> WishlistDB for MongoWishlistDB<T> 
+    where T: Logger + Send + Sync
 {
-    pub async fn get_users_with_series_card<'a>(&'a self, cards: Vec<(&'a str, &'a str)>) -> Result<Vec<((&str, &str), Vec<String>)>, Error> {
+    async fn get_users_with_series_card<'a> (
+        &'a self, 
+        cards: Vec<(&'a str, &'a str)>
+    ) -> Result<Vec<((&str, &str), Vec<String>)>, Box<dyn std::error::Error + Send + Sync>> 
+    {
         let collection = get_wishlist_collection(&self.db_client);
 
         let mut facet = doc! {};
@@ -51,7 +56,7 @@ impl <T> WishlistDB<T>
 
         if let Err(err) = res {
             self.logger.log_error(err.to_string());
-            return Err(err);
+            return Err(Box::new(err));
         }
 
         let cursor = res.unwrap();
@@ -79,9 +84,12 @@ impl <T> WishlistDB<T>
         return Ok(ret);
     }
 
-    pub async fn get_users_with_series<'a>(&'a self, series:&Vec<&'a str>) -> Result<Vec<(&str, Vec<(String, i32)>)>, Error> {
+    async fn get_users_with_series<'a> (
+        &'a self, 
+        series:&Vec<&'a str>
+    ) -> Result<Vec<(&str, Vec<(String, i32)>)>, Box<dyn std::error::Error + Send + Sync>> 
+    {
         let collection = get_wishlist_collection(&self.db_client);
-
 
         let mut facet = doc! {};
         let mut n = 0;
@@ -115,7 +123,7 @@ impl <T> WishlistDB<T>
 
         if let Err(err) = res {
             self.logger.log_error(err.to_string());
-            return Err(err);
+            return Err(Box::new(err));
         }
 
         let cursor = res.unwrap();
@@ -148,7 +156,13 @@ impl <T> WishlistDB<T>
         return Ok(ret);
     }
 
-    pub async fn add_all_to_wishlist(&self, user_id:&str, series:&str, mut card_names:Vec<&str>) -> Result<i32, Error> {
+    async fn add_all_to_wishlist (
+        &self, 
+        user_id:&str, 
+        series:&str, 
+        mut card_names:Vec<&str>
+    ) -> Result<i32, Box<dyn std::error::Error + Send + Sync>> 
+    {
         let collection = get_wishlist_collection(&self.db_client);
         
         let series_search = series_to_search_term(series);
@@ -162,7 +176,7 @@ impl <T> WishlistDB<T>
             ).await;
             
             if res.is_err() {
-                return Err(res.unwrap_err());
+                return Err(Box::new(res.unwrap_err()));
             }
 
             initial_amount = 0;
@@ -196,12 +210,18 @@ impl <T> WishlistDB<T>
             },
             Err(err) => {
                 self.logger.log_error(err.to_string());
-                Err(err)
+                Err(Box::new(err))
             }
         }
     }
 
-    pub async fn remove_all_from_wishlist(&self, user_id:&str, series:&str, card_names:Vec<&str>) -> Result<(i32, i32), Error> {
+    async fn remove_all_from_wishlist (
+        &self, 
+        user_id:&str, 
+        series:&str, 
+        card_names:Vec<&str>
+    ) -> Result<(i32, i32), Box<dyn std::error::Error + Send + Sync>> 
+    {
         let collection = get_wishlist_collection(&self.db_client);
         
         let initial_amount = self.get_user_wishlisted_cards_count(user_id, series).await;
@@ -229,11 +249,15 @@ impl <T> WishlistDB<T>
 
                 Ok((initial_amount - curr_amount, curr_amount))
             },
-            Err(err) => Err(err)
+            Err(err) => Err(Box::new(err))
         }
     }
 
-    pub async fn get_user_wishlisted_series(&self, user_id: &str/*, start: i32, end: i32*/) -> Vec<String> {
+    async fn get_user_wishlisted_series (
+        &self, 
+        user_id: &str
+    ) -> Vec<String> 
+    {
         let collection = get_wishlist_collection(&self.db_client);
 
         let Ok(mut cursor) =
@@ -281,7 +305,12 @@ impl <T> WishlistDB<T>
         return ret;
     }
 
-    pub async fn get_user_wishlisted_cards_count(&self, user_id: &str, series: &str) -> i32 {
+    async fn get_user_wishlisted_cards_count (
+        &self, 
+        user_id: &str, 
+        series: &str
+    ) -> i32 
+    {
         let collection = get_wishlist_collection(&self.db_client);
 
         let series_search = series_to_search_term(series);
@@ -325,7 +354,12 @@ impl <T> WishlistDB<T>
         }
     }
 
-    pub async fn get_user_wishlisted_cards(&self, user_id: &str, series: &str) -> Vec<String> {
+    async fn get_user_wishlisted_cards (
+        &self, 
+        user_id: &str, 
+        series: &str
+    ) -> Vec<String> 
+    {
         let collection = get_wishlist_collection(&self.db_client);
 
         let series_search = series_to_search_term(series);
@@ -382,21 +416,12 @@ impl <T> WishlistDB<T>
         }
     }
 
-    async fn user_has_series(&self, user_id: &str, series: &str) -> bool {
-        let collection = get_wishlist_collection(&self.db_client);
-
-        let series_search = series_to_search_term(series);
-
-        match collection.find_one(
-            doc! {"id": user_id, "series.search": series_search},
-            None
-        ).await {
-            Ok(x) => x.is_some(),
-            Err(_) => false,
-        }
-    }
-
-    pub async fn user_has_card(&self, user_id: &str, series: &str, card: &str) -> bool {
+    async fn user_has_card (
+        &self, 
+        user_id: &str, 
+        series: &str, 
+        card: &str
+    ) -> bool {
         let collection = get_wishlist_collection(&self.db_client);
 
         let series_search = series_to_search_term(series);
@@ -411,7 +436,12 @@ impl <T> WishlistDB<T>
         }
     }
 
-    pub async fn remove_series_from_wishlist(&self, user_id:&str, series:&str) -> Result<i32, Error> {
+    async fn remove_series_from_wishlist (
+        &self, 
+        user_id:&str, 
+        series:&str
+    ) -> Result<i32, Box<dyn std::error::Error + Send + Sync>> 
+    {
         let collection = get_wishlist_collection(&self.db_client);
 
         let series_search = series_to_search_term(series);
@@ -426,10 +456,28 @@ impl <T> WishlistDB<T>
 
         if let Err(err) = res {
             self.logger.log_error(format!("remove_series_from_wishlist: {}", err.to_string()));
-            return Err(err);
+            return Err(Box::new(err));
         }
 
         return Ok(series_cards_amount);
+    }
+}
+
+impl <T> MongoWishlistDB<T>
+    where T: Logger
+{
+    async fn user_has_series(&self, user_id: &str, series: &str) -> bool {
+        let collection = get_wishlist_collection(&self.db_client);
+
+        let series_search = series_to_search_term(series);
+
+        match collection.find_one(
+            doc! {"id": user_id, "series.search": series_search},
+            None
+        ).await {
+            Ok(x) => x.is_some(),
+            Err(_) => false,
+        }
     }
 }
 

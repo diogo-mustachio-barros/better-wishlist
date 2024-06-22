@@ -156,11 +156,11 @@ impl <T> WishlistDB for MongoWishlistDB<T>
         return Ok(ret);
     }
 
-    async fn add_all_to_wishlist (
+    async fn add_all_to_wishlist<'a> (
         &self, 
-        user_id:&str, 
-        series:&str, 
-        mut card_names:Vec<&str>
+        user_id:&'a str, 
+        series:&'a str, 
+        mut card_names:Vec<&'a str>
     ) -> Result<i32, Box<dyn std::error::Error + Send + Sync>> 
     {
         let collection = get_wishlist_collection(&self.db_client);

@@ -14,11 +14,11 @@ pub trait WishlistDB: Send + Sync {
         series:&Vec<&'a str>
     ) -> Result<Vec<(&str, Vec<(String, i32)>)>, Box<dyn Error + Send + Sync>>;
     
-    async fn add_all_to_wishlist(
+    async fn add_all_to_wishlist<'a>(
         &self, 
-        user_id:&str, 
-        series:&str, 
-        card_names:Vec<&str>
+        user_id:&'a str, 
+        series:&'a str, 
+        card_names:Vec<&'a str>
     ) -> Result<i32, Box<dyn Error + Send + Sync>>;
     
     async fn remove_all_from_wishlist(

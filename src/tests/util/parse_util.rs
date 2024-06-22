@@ -180,17 +180,17 @@ mod parse_card_from_series_lookup {
 
     #[test]
     fn lookup_not_has_card() {
-        assert_eq!(parse_card_from_series_lookup("A • A • ☑️ • A • A • **card**"), Some((false, "card")));
+        assert_eq!(parse_card_from_series_lookup("A • A • ` ` • A • A • **card**"), Some((false, "card")));
     }
 
     #[test]
     fn lookup_not_has_card_big() {
-        assert_eq!(parse_card_from_series_lookup("A • A • • A • A • **a big card**"), Some((false, "a big card")));
+        assert_eq!(parse_card_from_series_lookup("A • A • ` ` • A • A • **a big card**"), Some((false, "a big card")));
     }
 
     #[test]
     fn lookup_not_has_card_spaced() {
-        assert_eq!(parse_card_from_series_lookup("A • A • • A • A • **   a spaced card   **"), Some((false, "a spaced card")));
+        assert_eq!(parse_card_from_series_lookup("A • A • ` ` • A • A • **   a spaced card   **"), Some((false, "a spaced card")));
     }
 }
 

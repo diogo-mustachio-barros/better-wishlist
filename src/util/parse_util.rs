@@ -7,7 +7,9 @@ const MONGODB_URL_KEY   : &str = "MONGODB_URL";
 
 const HAS_CARD_EMOJI : &str = "☑️";
 
-const SERIES_ANALYSIS_REGEX : &str = r"^[^•]+?•[^•]+?•\s+([^ɢ`•*]+)";
+const CARDS_ANALYSIS_REGEX : &str = r"^[^•]+•[^•]+•[^•]+•[^•]+•\s\*\*([^•]+?)\*\*\s•([^•]*).*";
+const SERIES_ANALYSIS_REGEX : &str = r"^[^•]+?•[^•]+?•\s+([^ɢ`•\*]+)$";
+const SERIES_LOOKUP_REGEX : &str = r"[^•]+?•[^•]+?•\s([^•]+?)\s•[^•]+?•[^•]+?•\s\*\*([^•]+?)\*\*$";
 
 pub fn parse_secrets() -> Option<(String, String)> {
     // Main args have priority
@@ -30,7 +32,7 @@ pub fn parse_secrets() -> Option<(String, String)> {
 
 pub fn parse_series_card_from_analysis(line: &str) -> Option<(&str, &str)> {
     
-    let re = Regex::new(r".+?•.+?•\s\*\*([^•]+?)\*\*\s•(.*)").unwrap();
+    let re = Regex::new(CARDS_ANALYSIS_REGEX).unwrap();
 
     match re.captures(line) {
         Some(matches) => {
@@ -62,7 +64,7 @@ pub fn is_series_analysis(line: &str) -> bool {
 
 pub fn parse_card_from_series_lookup(line: &str) -> Option<(bool, &str)> {
     
-    let re = Regex::new(r".+?•.+?•\s([^•]+?)\s•.+?•.+?•\s\*\*([^•]+?)\*\*").unwrap();
+    let re = Regex::new(SERIES_LOOKUP_REGEX).unwrap();
 
     match re.captures(line) {
         Some(matches) => {
@@ -89,7 +91,7 @@ pub fn parse_series_from_embed_description(description: &str) -> Option<&str> {
 pub fn parse_series_cards(line: &str) -> Option<(&str, Vec<&str>)> {
     let re = Regex::new(r"\s*(.+)\s*\|\|\s*(.+)").unwrap();
 
-    re.captures(line)
+    re.captures(line.trim())
       .map(|capt| {
         let (_, [series, cards]) = capt.extract();
         let card_names:Vec<&str> = cards.split(",")

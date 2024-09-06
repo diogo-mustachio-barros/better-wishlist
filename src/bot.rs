@@ -99,7 +99,7 @@ async fn stripped_dynamic_prefix<'a>(
     _:&'a Data,
 ) -> Result<Option<(&'a str, &'a str)>, Error> 
 {
-    if INTEGRATED_COMMANDS.iter().any(|x| msg.content.starts_with(x)) {
+    if INTEGRATED_COMMANDS.iter().any(|x| msg.content.to_lowercase().starts_with(x)) {
         Ok(Some(("", msg.content.as_str())))
     // } else if msg.content.starts_with(".") {
     //     Ok(Some(msg.content.split_at(1)))

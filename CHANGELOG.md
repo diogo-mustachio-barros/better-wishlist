@@ -34,3 +34,11 @@ Types of changes
     - Hideaki
         - drop analysis
         - series vote
+
+## [1.0.1] - 2024-11-12
+
+### Changed
+- `.wl` command output now lists the total wishlisted series/cards #33
+
+### Fixed
+- SOFI integration commands are no longer case sensitive #32

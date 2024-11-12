@@ -226,27 +226,43 @@ pub async fn wl(
 {
     let user_id = user.map(|user| user.id).unwrap_or(ctx.author().id);
 
-    let pages = match content {
+    let (pages, total_count) = match content {
         None => {
             let wishlisted_series = ctx.data().wishlist_db.get_user_wishlisted_series(&user_id.to_string()).await;
+            let total_size = wishlisted_series.len();
 
-            wishlisted_series.chunks(10)
-                .map(|chunk| chunk.join("\n"))
-                .collect()
+            let wishlisted_series_chunks = wishlisted_series.chunks(10);
+
+            let mut series_pages = Vec::with_capacity(wishlisted_series_chunks.len());
+            for series_chunk in wishlisted_series_chunks {
+                let mut series_page = Vec::with_capacity(series_chunk.len());
+
+                for series in series_chunk {
+                    let count = ctx.data().wishlist_db.get_user_wishlisted_cards_count(&user_id.to_string(), series).await;
+                    series_page.push(format!("{series} ({count})"));
+                }
+
+                series_pages.push(series_page.join("\n"))
+            };
+
+            (series_pages, total_size)
         },
         Some(series) => {
-            let mut wishlisted_series = ctx.data().wishlist_db.get_user_wishlisted_cards(&user_id.to_string(), &series).await;
+            let mut wishlisted_cards = ctx.data().wishlist_db.get_user_wishlisted_cards(&user_id.to_string(), &series).await;
+            let total_size = wishlisted_cards.len();
 
-            wishlisted_series.chunks_mut(10)
+            ( wishlisted_cards.chunks_mut(10)
                 .map(|chunk| {
                     chunk.iter_mut().for_each(|s| s.truncate(32));
                     chunk.join("\n")
                 })
                 .collect()
+            , total_size
+            )
         }
     };
 
-    paginate(ctx, pages).await?;
+    paginate(ctx, pages, total_count).await?;
 
     Ok(())
 }
@@ -336,17 +352,10 @@ You can edit your `.help` message to the bot and the bot will edit its response.
 
 
 
-
-
-
-
-
-
-
-
 pub async fn paginate (
     ctx: Context<'_>,
     pages: Vec<String>,
+    total_size: usize,
 ) -> Result<(), serenity::Error> {
     // Define some unique identifiers for the navigation buttons
     let ctx_id = ctx.id();
@@ -368,7 +377,7 @@ pub async fn paginate (
             .embed(
                 serenity::CreateEmbed::default()
                     .description(pages.get(0).unwrap_or(&"Nothing to show".to_string()))
-                    .footer(CreateEmbedFooter::new(format!("Page {}/{}", min(pages.len(), 1), pages.len())))
+                    .footer(CreateEmbedFooter::new(format!("Page {}/{} (Total {})", min(pages.len(), 1), pages.len(), total_size)))
                 )
             .components(components)
     };
@@ -413,7 +422,7 @@ pub async fn paginate (
                         .embed(
                             serenity::CreateEmbed::new()
                                 .description(pages.get(current_page).unwrap())
-                                .footer(CreateEmbedFooter::new(format!("Page {}/{}", current_page + 1, pages.len())))
+                                .footer(CreateEmbedFooter::new(format!("Page {}/{} (Total {})", current_page + 1, pages.len(), total_size)))
                             ),
                 ),
             )

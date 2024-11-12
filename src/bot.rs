@@ -209,7 +209,7 @@ async fn wishlist_check_series(
     if wishlist_pings.len() > 0 
     {
         let mut message = MessageBuilder::new();
-        message.push("@@@ A series from your wishlist is up for grabs!\n");
+        message.push("A series from your wishlist is up for grabs!\n");
 
         for (series, users) in wishlist_pings {
             message.push(format!("{series}: \n"));
@@ -348,30 +348,3 @@ async fn wishlist_check_cards (
         }
     }
 }
-
-
-// async fn mentions_user_message(
-//     ctx: &serenity::Context, 
-//     msg: &Message, 
-//     author_id: UserId
-// ) -> bool 
-// {
-//     let Some(ref reference) = msg.message_reference
-//     else {
-//         return false;
-//     };
-
-//     let Some(message_id) = reference.message_id 
-//     else {
-//         return false;
-//     };
-
-//     let channel_id = reference.channel_id;
-
-//     let Ok(message) = ctx.http().get_message(channel_id, message_id).await
-//     else {
-//         return false;
-//     };
-
-//     return message.author.id == author_id;
-// }

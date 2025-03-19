@@ -7,8 +7,8 @@ const MONGODB_URL_KEY   : &str = "MONGODB_URL";
 
 const HAS_CARD_EMOJI : &str = "☑️";
 
-const CARDS_ANALYSIS_REGEX : &str = r"^[^•]+•[^•]+•[^•]+•[^•]+•\s\*\*([^•]+?)\*\*\s•([^•]*).*";
-const SERIES_ANALYSIS_REGEX : &str = r"^[^•]+?•[^•]+?•\s+([^ɢ`•\*]+)$";
+const CARDS_ANALYSIS_REGEX : &str = r"^[^•]+•[^•]+•[^•]+•\s\*\*([^•]+?)\*\*\s•\s([^•]*)$";
+const SERIES_ANALYSIS_REGEX : &str = r"^[^•]+?•[^•]+?•[^•]+?•\s+([^ɢ`]+)$";
 const SERIES_LOOKUP_REGEX : &str = r"[^•]+?•[^•]+?•\s([^•]+?)\s•[^•]+?•[^•]+?•\s\*\*([^•]+?)\*\*$";
 
 pub fn parse_secrets() -> Option<(String, String)> {

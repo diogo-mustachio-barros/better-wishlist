@@ -29,32 +29,32 @@ mod parse_series_card_from_analysis {
 
     #[test]
     fn no_series_name() {
-        assert_eq!(parse_series_card_from_analysis("A • A • A • A •"), None);
+        assert_eq!(parse_series_card_from_analysis("A • A • A • **card** •"), None);
     }
 
     #[test]
     fn too_many_separators_with_drop() {
-        assert_eq!(parse_series_card_from_analysis("A • A • A • A • A • **card** • series"), None);
+        assert_eq!(parse_series_card_from_analysis("A • A • A • A • **card** • series"), None);
     }
 
     #[test]
     fn simple_drop() {
         assert_eq!(
-            parse_series_card_from_analysis("A • A • A • A • **card** • series"), 
+            parse_series_card_from_analysis("A • A • A • **card** • series"), 
             Some(("series", "card")));
     }
 
     #[test]
     fn big_drop() {
         assert_eq!(
-            parse_series_card_from_analysis("A • A • A • A • **a big card** • a large series"), 
+            parse_series_card_from_analysis("A • A • A • **a big card** • a large series"), 
             Some(("a large series", "a big card")));
     }
 
     #[test]
     fn drop_with_padding() {
         assert_eq!(
-            parse_series_card_from_analysis("A • A • A • A • **  spaced card  ** •   spaced series   "), 
+            parse_series_card_from_analysis("A • A • A • **  spaced card  ** •   spaced series   "), 
             Some(("spaced series", "spaced card")));
     }
 }

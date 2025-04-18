@@ -59,7 +59,13 @@ pub fn parse_series_from_analysis(line: &str) -> Option<&str> {
 pub fn is_series_analysis(line: &str) -> bool {
     let re = Regex::new(SERIES_ANALYSIS_REGEX).unwrap();
 
-    re.is_match(line)
+    re.is_match(line.lines().next().unwrap_or(""))
+}
+
+pub fn is_card_analysis(line: &str) -> bool {
+    let re = Regex::new(CARDS_ANALYSIS_REGEX).unwrap();
+
+    re.is_match(line.lines().next().unwrap_or(""))
 }
 
 pub fn parse_card_from_series_lookup(line: &str) -> Option<(bool, &str)> {

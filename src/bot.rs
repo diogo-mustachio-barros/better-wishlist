@@ -12,7 +12,7 @@ use crate::commands::*;
 use crate::integrations::*;
 use crate::traits::wishlist_db::WishlistDB;
 use crate::util::either::Either;
-use crate::util::parse_util::{is_series_analysis, parse_series_card_from_analysis, parse_series_from_analysis};
+use crate::util::parse_util::{is_card_analysis, is_series_analysis, parse_series_card_from_analysis, parse_series_from_analysis};
 use crate::components::logger::Logger;
 
 pub const _SOFI_USER_ID: UserId = UserId::new(853629533855809596);
@@ -158,8 +158,10 @@ async fn handle(
         _NORI_USER_ID => {
             if is_series_analysis(&msg.content) {
                 wishlist_check_series(ctx, msg, data).await?;
-            } else {
+            } else if is_card_analysis(&msg.content) {
                 wishlist_check_cards(ctx, msg, data).await?;
+            } else {
+                // Empty on purpose
             }
         }
         _ => ()
@@ -194,7 +196,7 @@ async fn wishlist_check_series(
     let targets = msg.content.lines()
         .map(|line| parse_series_from_analysis(line).unwrap_or(""))
         .collect();
-
+    
     let wishlisted_res = 
         data.wishlist_db.get_users_with_series(&targets).await;
 
